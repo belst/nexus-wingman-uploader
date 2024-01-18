@@ -316,8 +316,10 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
         load,
         unload: Some(unsafe { NonNull::new_unchecked(unload as _) }),
         flags: EAddonFlags::None,
-        provider: nexus_rs::raw_structs::EUpdateProvider::None,
-        update_link: None,
+        provider: nexus_rs::raw_structs::EUpdateProvider::GitHub,
+        update_link: Some(unsafe {
+            NonNull::new_unchecked(s!("https://github.com/belst/nexus-wingman-uploader").0 as _)
+        }),
     };
 
     &AD as *const _ as _
