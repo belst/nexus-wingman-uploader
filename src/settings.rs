@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Settings {
     pub logpath: String,
     pub dpsreport_token: String,
+    pub show_window: bool,
 }
 
 impl Settings {
@@ -25,6 +26,7 @@ impl Settings {
         Self {
             logpath: Self::default_dir().to_string_lossy().to_string(),
             dpsreport_token: String::new(),
+            show_window: true,
         }
     }
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {

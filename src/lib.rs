@@ -98,7 +98,7 @@ unsafe extern "C" fn load(api: *mut AddonAPI) {
 
     let _ = SETTINGS.set(Settings::from_path(config_path()).unwrap_or_else(|_| Settings::new()));
     let token = SETTINGS.get().unwrap().dpsreport_token.clone();
-    let dpsreport = if token != "" {
+    let dpsreport = if !token.is_empty() {
         DpsReportUploader::with_token(token)
     } else {
         DpsReportUploader::new()
@@ -137,9 +137,9 @@ unsafe extern "C" fn load(api: *mut AddonAPI) {
 
 const KB_IDENTIFIER: *const c_char = s!("KB_OPEN_WINGMAN_UPLOADS").0 as _;
 
-static mut SHOW_WINDOW: bool = true;
 unsafe extern "C" fn keypress(_: *const c_char) {
-    SHOW_WINDOW = !SHOW_WINDOW;
+    let settings = SETTINGS.get_mut().unwrap();
+    settings.show_window = !settings.show_window;
 }
 
 fn set_watch_path<W: Watcher, P: AsRef<Path>>(w: &mut W, path: P) {
@@ -157,7 +157,7 @@ unsafe extern "C" fn unload() {
     let _ = SETTINGS.get().unwrap().store(config_path());
     (api.unregister_render)(render);
     (api.unregister_render)(render_options);
-    (api.unregister_keybind)(KB_IDENTIFIER);
+    // (api.unregister_keybind)(KB_IDENTIFIER);
     for t in THREADS.take().unwrap() {
         let _ = t.join();
     }
@@ -189,9 +189,9 @@ extern "C" fn render() {
         }
     };
 
-    let show_window = unsafe { SHOW_WINDOW };
+    let show_window = unsafe { &mut SETTINGS.get_mut().unwrap().show_window };
     let ui = unsafe { UI.assume_init_ref() };
-    let (w, t) = if show_window {
+    let (w, t) = if *show_window {
         let flags = TableFlags::BORDERS_OUTER
             | TableFlags::BORDERS_INNER_V
             | TableFlags::NO_HOST_EXTEND_X
@@ -203,7 +203,8 @@ extern "C" fn render() {
             ui.calc_text_size("Kanaxai, Scythe of House Aurkus\\20230719-194103.zevtc")[0];
         (
             Window::new("Wingman Uploader")
-                .opened(unsafe { &mut SHOW_WINDOW })
+                .opened(show_window)
+                .collapsible(false)
                 .begin(ui),
             ui.begin_table_header_with_flags(
                 "Uploads",
@@ -307,7 +308,7 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
         name: s!("Wingmanuploader").0 as _,
         version: AddonVersion {
             major: 0,
-            minor: 1,
+            minor: 2,
             build: 0,
             revision: 0,
         },

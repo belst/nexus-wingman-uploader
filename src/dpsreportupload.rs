@@ -6,7 +6,7 @@ use ureq::Agent;
 use ureq_multipart::MultipartRequest;
 
 use crate::log::info;
-use crate::{agent, Upload, UploadStatus};
+use crate::{agent, Upload, UploadStatus, SETTINGS};
 
 #[derive(Debug)]
 pub struct DpsReportUploader {
@@ -28,6 +28,11 @@ impl DpsReportUploader {
         })
     }
     pub fn set_token(&self, token: Option<String>) {
+        if let Some(ref token) = token {
+            unsafe {
+                SETTINGS.get_mut().unwrap().dpsreport_token = token.clone();
+            }
+        }
         *self.session_token.lock().unwrap() = token;
     }
     pub fn token(&self) -> Option<String> {
