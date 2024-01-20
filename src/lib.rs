@@ -53,6 +53,7 @@ enum UploadStatus {
     WingmanInProgress,
     Done,
     Quit,
+    Error,
 }
 
 #[derive(Debug, Default)]
@@ -118,7 +119,6 @@ unsafe extern "C" fn load(api: *mut AddonAPI) {
     let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
     let arclogspath = SETTINGS.get().unwrap().logpath.clone();
     set_watch_path(&mut watcher, arclogspath);
-    info("Setting up Watcher".into());
     let _ = WATCHER.set(watcher);
 
     (api.register_render)(ERenderType::Render, render);
@@ -167,9 +167,6 @@ extern "C" fn render() {
     let rx = WATCH_EVENTS_RX.get().unwrap().lock().unwrap();
 
     let ev = rx.try_recv();
-    if ev.is_ok() {
-        info(format!("[MAIN] Received FS Event: {ev:?}"));
-    }
     if let Ok(Ok(event)) = ev {
         if let EventKind::Modify(ModifyKind::Name(RenameMode::To)) = event.kind {
             unsafe { UPLOADS.get_mut().unwrap() }.extend(
@@ -308,7 +305,7 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
         name: s!("Wingmanuploader").0 as _,
         version: AddonVersion {
             major: 0,
-            minor: 2,
+            minor: 3,
             build: 0,
             revision: 0,
         },

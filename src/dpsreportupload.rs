@@ -5,7 +5,7 @@ use std::thread::{spawn, JoinHandle};
 use ureq::Agent;
 use ureq_multipart::MultipartRequest;
 
-use crate::log::info;
+use crate::log::{error, info};
 use crate::{agent, Upload, UploadStatus, SETTINGS};
 
 #[derive(Debug)]
@@ -43,22 +43,25 @@ impl DpsReportUploader {
         spawn(move || {
             while let Ok(path) = rx.recv() {
                 let mut p = path.lock().unwrap();
-                info(format!("[DpsReportUploader] Received Event: {:?}", *p));
                 if p.status == UploadStatus::Quit {
-                    info("[DpsReportUploader] Received QUIT Event".into());
                     break;
                 }
                 p.status = UploadStatus::DpsReportInProgress;
                 let file = p.file.clone();
                 drop(p);
-                info(format!("[DpsReportUploader] Uploading {file:?}"));
                 let res = self.upload_file(file);
-                info(format!("[DpsReportUploader] Got Response {res:?}"));
-                if let Ok(res) = res {
-                    self.set_token(Some(res.user_token));
-                    let mut p = path.lock().unwrap();
-                    p.dpsreporturl = Some(res.permalink);
-                    p.status = UploadStatus::DpsReportDone;
+                match res {
+                    Ok(res) => {
+                        self.set_token(Some(res.user_token));
+                        let mut p = path.lock().unwrap();
+                        p.dpsreporturl = Some(res.permalink);
+                        p.status = UploadStatus::DpsReportDone;
+                    }
+                    Err(e) => {
+                        let mut p = path.lock().unwrap();
+                        p.status = UploadStatus::Error;
+                        error(format!("[DpsReportUploader] Error Uploading: {e}"));
+                    }
                 }
             }
         })
