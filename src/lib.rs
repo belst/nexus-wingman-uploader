@@ -271,13 +271,14 @@ extern "C" fn render() {
                 error(format!("Error opening browser: {e}"));
             }
             ui.table_next_column();
-            let url = if unsafe { !SETTINGS.get().unwrap().enable_wingman } {
-                "Wingman uploads disabled"
-            } else if u.wingmanurl.is_none() {
-                "Wingmanupload pending"
-            } else {
-                u.wingmanurl.as_ref().unwrap()
-            };
+            let url =
+                if unsafe { !SETTINGS.get().unwrap().enable_wingman } && u.wingmanurl.is_none() {
+                    "Wingman uploads disabled"
+                } else if u.wingmanurl.is_none() {
+                    "Wingmanupload pending"
+                } else {
+                    u.wingmanurl.as_ref().unwrap()
+                };
             if let Err(e) = ui.link(url, u.wingmanurl.as_ref()) {
                 error(format!("Error opening browser: {e}"));
             }
