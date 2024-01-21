@@ -9,6 +9,10 @@ pub fn log(level: ELogLevel, msg: String) {
     }
 }
 
+pub fn trace(msg: String) {
+    log(ELogLevel::TRACE, msg);
+}
+
 pub fn info(msg: String) {
     log(ELogLevel::INFO, msg);
 }

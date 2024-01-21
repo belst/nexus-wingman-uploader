@@ -28,7 +28,7 @@ use ureq::AgentBuilder;
 use windows::core::s;
 use wingmanupload::WingmanUploader;
 
-use crate::log::{error, info};
+use crate::log::error;
 
 mod dpsreportupload;
 mod log;
@@ -56,11 +56,22 @@ enum UploadStatus {
     Error,
 }
 
+#[derive(Debug, PartialEq, Default)]
+enum Logtype {
+    #[default]
+    Pve,
+    Wvw,
+}
+
 #[derive(Debug, Default)]
 struct Upload {
     status: UploadStatus,
+    logtype: Logtype,
     file: PathBuf,
     dpsreporturl: Option<String>,
+    json: Vec<u8>,
+    html: Vec<u8>,
+    acc_name: Option<String>,
 }
 
 static mut API: MaybeUninit<&'static AddonAPI> = MaybeUninit::uninit();
@@ -178,8 +189,12 @@ extern "C" fn render() {
                     .map(|f| {
                         Arc::new(Mutex::new(Upload {
                             status: UploadStatus::Pending,
+                            logtype: Default::default(),
                             file: f,
                             dpsreporturl: None,
+                            json: Vec::new(),
+                            html: Vec::new(),
+                            acc_name: None,
                         }))
                     }),
             );
@@ -241,14 +256,11 @@ extern "C" fn render() {
             let file = u.file.iter().rev().take(2).fold(String::new(), |acc, c| {
                 c.to_string_lossy().to_string() + "\\" + &acc
             });
-            ui.text(format!("{}", file.trim_end_matches("\\")));
+            ui.text(file.trim_end_matches('\\'));
 
             ui.table_next_column();
             let blue = ui.push_style_color(StyleColor::Text, [0.0, 0.0, 1.0, 1.0]);
-            ui.text(format!(
-                "{}",
-                u.dpsreporturl.as_deref().unwrap_or("Upload Pending")
-            ));
+            ui.text(u.dpsreporturl.as_deref().unwrap_or("Upload Pending"));
             blue.pop();
             if u.dpsreporturl.is_some() && ui.is_item_hovered() {
                 if ui.is_mouse_clicked(MouseButton::Left) {
@@ -295,6 +307,7 @@ extern "C" fn render_options() {
     ui.input_text("Dps Report Token", &mut settings.dpsreport_token)
         .read_only(true)
         .build();
+    ui.checkbox("Enable Wingman?", &mut settings.enable_wingman);
 }
 
 #[no_mangle]
@@ -305,7 +318,7 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
         name: s!("Wingmanuploader").0 as _,
         version: AddonVersion {
             major: 0,
-            minor: 3,
+            minor: 4,
             build: 0,
             revision: 0,
         },

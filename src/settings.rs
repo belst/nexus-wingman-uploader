@@ -11,6 +11,7 @@ pub struct Settings {
     pub logpath: String,
     pub dpsreport_token: String,
     pub show_window: bool,
+    pub enable_wingman: bool,
 }
 
 impl Settings {
@@ -27,6 +28,7 @@ impl Settings {
             logpath: Self::default_dir().to_string_lossy().to_string(),
             dpsreport_token: String::new(),
             show_window: true,
+            enable_wingman: true,
         }
     }
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
