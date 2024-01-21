@@ -278,7 +278,7 @@ extern "C" fn render() {
             } else {
                 u.wingmanurl.as_ref().unwrap()
             };
-            if let Err(e) = ui.link(url, u.dpsreporturl.as_ref()) {
+            if let Err(e) = ui.link(url, u.wingmanurl.as_ref()) {
                 error(format!("Error opening browser: {e}"));
             }
         }
@@ -328,7 +328,7 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
         version: AddonVersion {
             major: 0,
             minor: 5,
-            build: 0,
+            build: 1,
             revision: 0,
         },
         author: s!("belst").0 as _,
