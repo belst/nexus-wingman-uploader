@@ -13,7 +13,7 @@ use std::{
 
 use arcdps_imgui::{
     sys::{cty::c_char, igSetAllocatorFunctions, igSetCurrentContext},
-    Context, MouseButton, StyleColor, TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window,
+    Context, TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window,
 };
 use dpsreportupload::DpsReportUploader;
 use nexus_rs::raw_structs::{
@@ -24,6 +24,7 @@ use notify::{
     Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 use settings::Settings;
+use ui::UiExt;
 use ureq::AgentBuilder;
 use windows::core::s;
 use wingmanupload::WingmanUploader;
@@ -33,6 +34,7 @@ use crate::log::error;
 mod dpsreportupload;
 mod log;
 mod settings;
+mod ui;
 mod wingmanupload;
 
 pub fn agent() -> ureq::Agent {
@@ -51,6 +53,7 @@ enum UploadStatus {
     DpsReportInProgress,
     DpsReportDone,
     WingmanInProgress,
+    WingmanSkipped,
     Done,
     Quit,
     Error,
@@ -69,9 +72,7 @@ struct Upload {
     logtype: Logtype,
     file: PathBuf,
     dpsreporturl: Option<String>,
-    json: Vec<u8>,
-    html: Vec<u8>,
-    acc_name: Option<String>,
+    wingmanurl: Option<String>,
 }
 
 static mut API: MaybeUninit<&'static AddonAPI> = MaybeUninit::uninit();
@@ -192,9 +193,7 @@ extern "C" fn render() {
                             logtype: Default::default(),
                             file: f,
                             dpsreporturl: None,
-                            json: Vec::new(),
-                            html: Vec::new(),
-                            acc_name: None,
+                            wingmanurl: None,
                         }))
                     }),
             );
@@ -239,6 +238,12 @@ extern "C" fn render() {
                         init_width_or_weight: max_state_width + 10.0,
                         user_id: Default::default(),
                     },
+                    TableColumnSetup {
+                        name: "Wingman",
+                        flags: TableColumnFlags::WIDTH_STRETCH,
+                        init_width_or_weight: max_state_width + 10.0,
+                        user_id: Default::default(),
+                    },
                 ],
                 flags,
             ),
@@ -247,7 +252,7 @@ extern "C" fn render() {
         (None, None)
     };
     for upload in unsafe { UPLOADS.get().unwrap() } {
-        let u = upload.lock().unwrap();
+        let mut u = upload.lock().unwrap();
         if let Some(ref _t) = t {
             ui.table_next_column();
             ui.text(format!("{:?}", u.status));
@@ -259,22 +264,22 @@ extern "C" fn render() {
             ui.text(file.trim_end_matches('\\'));
 
             ui.table_next_column();
-            let blue = ui.push_style_color(StyleColor::Text, [0.0, 0.0, 1.0, 1.0]);
-            ui.text(u.dpsreporturl.as_deref().unwrap_or("Upload Pending"));
-            blue.pop();
-            if u.dpsreporturl.is_some() && ui.is_item_hovered() {
-                if ui.is_mouse_clicked(MouseButton::Left) {
-                    if let Err(e) = open::that_detached(u.dpsreporturl.as_ref().unwrap()) {
-                        error(format!("Error opening browser: {e}"));
-                    }
-                }
-                let mut min = ui.item_rect_min();
-                let max = ui.item_rect_max();
-                min[1] = max[1];
-                ui.get_window_draw_list()
-                    .add_line(min, max, [0.0, 0.0, 1.0, 1.0])
-                    .build();
-                ui.tooltip_text("Open in Browser");
+            if let Err(e) = ui.link(
+                u.dpsreporturl.as_deref().unwrap_or("Upload Pending"),
+                u.dpsreporturl.as_ref(),
+            ) {
+                error(format!("Error opening browser: {e}"));
+            }
+            ui.table_next_column();
+            let url = if unsafe { !SETTINGS.get().unwrap().enable_wingman } {
+                "Wingman uploads disabled"
+            } else if u.wingmanurl.is_none() {
+                "Wingmanupload pending"
+            } else {
+                u.wingmanurl.as_ref().unwrap()
+            };
+            if let Err(e) = ui.link(url, u.dpsreporturl.as_ref()) {
+                error(format!("Error opening browser: {e}"));
             }
         }
         match u.status {
@@ -282,7 +287,11 @@ extern "C" fn render() {
                 let _ = FILEPATH_TX.get().unwrap().send(upload.clone());
             }
             UploadStatus::DpsReportDone => {
-                let _ = DPSURL_TX.get().unwrap().send(upload.clone());
+                if u.logtype == Logtype::Pve && unsafe { SETTINGS.get().unwrap().enable_wingman } {
+                    let _ = DPSURL_TX.get().unwrap().send(upload.clone());
+                } else {
+                    u.status = UploadStatus::WingmanSkipped;
+                }
             }
             _ => {}
         }
@@ -318,7 +327,7 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
         name: s!("Wingmanuploader").0 as _,
         version: AddonVersion {
             major: 0,
-            minor: 4,
+            minor: 5,
             build: 0,
             revision: 0,
         },

@@ -8,11 +8,6 @@ pub fn log(level: ELogLevel, msg: String) {
         (api.log)(level, (msg + "\0").as_ptr() as _);
     }
 }
-
-pub fn trace(msg: String) {
-    log(ELogLevel::TRACE, msg);
-}
-
 pub fn info(msg: String) {
     log(ELogLevel::INFO, msg);
 }
