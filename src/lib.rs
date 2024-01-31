@@ -74,16 +74,16 @@ struct Upload {
     dpsreporturl: Option<String>,
     wingmanurl: Option<String>,
 }
-
+// Everything mut so we can .take() on unload to clean up
 static mut API: MaybeUninit<&'static AddonAPI> = MaybeUninit::uninit();
 static mut CTX: MaybeUninit<Context> = MaybeUninit::uninit();
 static mut UI: MaybeUninit<Ui> = MaybeUninit::uninit();
 static mut UPLOADS: OnceLock<Vec<Arc<Mutex<Upload>>>> = OnceLock::new();
 static mut THREADS: OnceLock<Vec<JoinHandle<()>>> = OnceLock::new();
-static FILEPATH_TX: OnceLock<Sender<Arc<Mutex<Upload>>>> = OnceLock::new();
-static DPSURL_TX: OnceLock<Sender<Arc<Mutex<Upload>>>> = OnceLock::new();
-static WATCH_EVENTS_RX: OnceLock<Mutex<Receiver<notify::Result<Event>>>> = OnceLock::new();
-static WATCHER: OnceLock<RecommendedWatcher> = OnceLock::new();
+static mut FILEPATH_TX: OnceLock<Sender<Arc<Mutex<Upload>>>> = OnceLock::new();
+static mut DPSURL_TX: OnceLock<Sender<Arc<Mutex<Upload>>>> = OnceLock::new();
+static mut WATCH_EVENTS_RX: OnceLock<Mutex<Receiver<notify::Result<Event>>>> = OnceLock::new();
+static mut WATCHER: OnceLock<RecommendedWatcher> = OnceLock::new();
 static mut SETTINGS: OnceLock<Settings> = OnceLock::new();
 
 unsafe fn config_path() -> PathBuf {
@@ -155,7 +155,15 @@ unsafe extern "C" fn keypress(_: *const c_char) {
 }
 
 fn set_watch_path<W: Watcher, P: AsRef<Path>>(w: &mut W, path: P) {
-    let _ = w.watch(path.as_ref(), RecursiveMode::Recursive);
+    if let Err(e) = w.watch(path.as_ref(), RecursiveMode::Recursive) {
+        error(e.to_string());
+    }
+}
+
+fn unwatch<W: Watcher, P: AsRef<Path>>(w: &mut W, path: P) {
+    if let Err(e) = w.unwatch(path.as_ref()) {
+        error(e.to_string());
+    }
 }
 
 unsafe extern "C" fn unload() {
@@ -164,19 +172,23 @@ unsafe extern "C" fn unload() {
         status: UploadStatus::Quit,
         ..Default::default()
     }));
-    FILEPATH_TX.get().unwrap().send(quit.clone()).ok();
-    DPSURL_TX.get().unwrap().send(quit).ok();
-    let _ = SETTINGS.get().unwrap().store(config_path());
+    let arclogspath = SETTINGS.get().unwrap().logpath.clone();
+    unwatch(&mut WATCHER.take().unwrap(), arclogspath);
+    FILEPATH_TX.take().unwrap().send(quit.clone()).ok();
+    DPSURL_TX.take().unwrap().send(quit).ok();
+    let _ = SETTINGS.take().unwrap().store(config_path());
     (api.unregister_render)(render);
     (api.unregister_render)(render_options);
     // (api.unregister_keybind)(KB_IDENTIFIER);
     for t in THREADS.take().unwrap() {
         let _ = t.join();
     }
+    drop(UPLOADS.take());
+    drop(WATCH_EVENTS_RX.take());
 }
 
 extern "C" fn render() {
-    let rx = WATCH_EVENTS_RX.get().unwrap().lock().unwrap();
+    let rx = unsafe { WATCH_EVENTS_RX.get().unwrap().lock().unwrap() };
 
     let ev = rx.try_recv();
     if let Ok(Ok(event)) = ev {
@@ -285,11 +297,11 @@ extern "C" fn render() {
         }
         match u.status {
             UploadStatus::Pending => {
-                let _ = FILEPATH_TX.get().unwrap().send(upload.clone());
+                let _ = unsafe { FILEPATH_TX.get().unwrap() }.send(upload.clone());
             }
             UploadStatus::DpsReportDone => {
                 if u.logtype == Logtype::Pve && unsafe { SETTINGS.get().unwrap().enable_wingman } {
-                    let _ = DPSURL_TX.get().unwrap().send(upload.clone());
+                    let _ = unsafe { DPSURL_TX.get().unwrap() }.send(upload.clone());
                 } else {
                     u.status = UploadStatus::WingmanSkipped;
                 }
@@ -328,8 +340,8 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
         name: s!("Wingmanuploader").0 as _,
         version: AddonVersion {
             major: 0,
-            minor: 5,
-            build: 1,
+            minor: 6,
+            build: 0,
             revision: 0,
         },
         author: s!("belst").0 as _,
