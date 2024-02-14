@@ -168,6 +168,9 @@ fn unwatch<W: Watcher, P: AsRef<Path>>(w: &mut W, path: P) {
 
 unsafe extern "C" fn unload() {
     let api = unsafe { API.assume_init() };
+    (api.unregister_render)(render);
+    (api.unregister_render)(render_options);
+    (api.unregister_keybind)(KB_IDENTIFIER);
     let quit = Arc::new(Mutex::new(Upload {
         status: UploadStatus::Quit,
         ..Default::default()
@@ -177,9 +180,6 @@ unsafe extern "C" fn unload() {
     FILEPATH_TX.take().unwrap().send(quit.clone()).ok();
     DPSURL_TX.take().unwrap().send(quit).ok();
     let _ = SETTINGS.take().unwrap().store(config_path());
-    (api.unregister_render)(render);
-    (api.unregister_render)(render_options);
-    // (api.unregister_keybind)(KB_IDENTIFIER);
     for t in THREADS.take().unwrap() {
         let _ = t.join();
     }
@@ -342,7 +342,7 @@ pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
             major: 0,
             minor: 6,
             build: 0,
-            revision: 0,
+            revision: 1,
         },
         author: s!("belst").0 as _,
         description: s!("Uploads Logs to dps.report and gw2wingman").0 as _,
