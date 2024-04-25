@@ -5,7 +5,7 @@ use std::{
 
 use ureq::Agent;
 
-use crate::{agent, log::error, Upload, UploadStatus};
+use crate::{agent, Upload, UploadStatus};
 
 pub struct WingmanUploader {
     client: Agent,
@@ -38,17 +38,14 @@ impl WingmanUploader {
         spawn(move || {
             while let Ok(path) = rx.recv() {
                 let mut p = path.lock().unwrap();
-                if p.status == UploadStatus::Quit {
-                    break;
-                }
                 p.status = UploadStatus::WingmanInProgress;
                 let url = p.dpsreporturl.clone().unwrap();
                 drop(p);
                 let res = self.upload(&url);
                 let mut p = path.lock().unwrap();
                 if let Err(e) = res {
-                    error(format!("[WingmanUploader] {e}"));
-                    p.status = UploadStatus::Error;
+                    log::error!("[WingmanUploader] {e}");
+                    p.status = UploadStatus::Error(crate::dpslog::ErrorKind::Wingman(e));
                 } else {
                     p.wingmanurl = Some(
                         String::from("https://gw2wingman.nevermindcreations.de/log/")

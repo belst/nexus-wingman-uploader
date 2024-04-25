@@ -5,8 +5,8 @@ use std::thread::{spawn, JoinHandle};
 use ureq::Agent;
 use ureq_multipart::MultipartRequest;
 
-use crate::log::{error, info};
-use crate::{agent, Logtype, Upload, UploadStatus, SETTINGS};
+use crate::settings::Settings;
+use crate::{agent, dpslog::Logtype, Upload, UploadStatus};
 
 #[derive(Debug)]
 pub struct DpsReportUploader {
@@ -29,9 +29,7 @@ impl DpsReportUploader {
     }
     pub fn set_token(&self, token: Option<String>) {
         if let Some(ref token) = token {
-            unsafe {
-                SETTINGS.get_mut().unwrap().dpsreport_token = token.clone();
-            }
+            Settings::get().set_token(token.clone());
         }
         *self.session_token.lock().unwrap() = token;
     }
@@ -43,14 +41,11 @@ impl DpsReportUploader {
         spawn(move || {
             while let Ok(path) = rx.recv() {
                 let mut p = path.lock().unwrap();
-                if p.status == UploadStatus::Quit {
-                    break;
-                }
                 p.status = UploadStatus::DpsReportInProgress;
                 let file = p.file.clone();
                 drop(p);
 
-                info("[DpsReportUploader] Uploading log".into());
+                log::info!("[DpsReportUploader] Uploading log");
                 let res = self.upload_file(file);
                 match res {
                     Ok(res) => {
@@ -66,8 +61,8 @@ impl DpsReportUploader {
                     }
                     Err(e) => {
                         let mut p = path.lock().unwrap();
-                        p.status = UploadStatus::Error;
-                        error(format!("[DpsReportUploader] Error Uploading: {e}"));
+                        log::error!("[DpsReportUploader] Error Uploading: {e}");
+                        p.status = UploadStatus::Error(crate::dpslog::ErrorKind::DpsReport(e));
                     }
                 }
             }

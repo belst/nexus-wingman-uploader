@@ -1,9 +1,10 @@
 [package]
 name = "wingman-uploader"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "Wingman Uploader"
 build = "build.rs"
+authors = ["belst"]
 
 [lib]
 crate-type = ["cdylib"]
@@ -17,7 +18,6 @@ LegalCopyright = "Copyright © 2024-2025"
 
 [dependencies]
 anyhow = "1.0.79"
-arcdps-imgui = { version = "0.8.0", features = ["tables-api"] }
 atomic_float = "0.1.0"
 native-tls = "0.2.11"
 notify = "6.1.1"
@@ -28,19 +28,19 @@ ureq_multipart = "1.1.1"
 serde_json = "1.0.111"
 dirs-next = "2.0.0"
 open = "5.0.1"
-# rand = { version = "0.8.5", features = ["min_const_gen"] }
+log = "0.4.21"
 
 [dependencies.windows]
-version = "0.52.0"
+version = "0.56.0"
 features = [
     "Win32_System_LibraryLoader",
     "Win32_Foundation",
     "Win32_System_SystemServices"
 ]
 
-[dependencies.nexus-rs]
-git = "https://github.com/belst/raidcore_bindings-rs"
-rev = "423e14136e2adec56ba392e2db4e0e61f8507de5"
+[target.'cfg(windows)'.dependencies.nexus]
+git = "https://github.com/Zerthox/nexus-rs"
+features = ["log"]
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.11"

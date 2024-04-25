@@ -1,9 +1,10 @@
 use std::ffi::OsStr;
 
-use arcdps_imgui::{StyleColor, Ui};
+use nexus::imgui::{StyleColor, Ui, Window};
 
 pub trait UiExt {
     fn link<L: AsRef<str>, U: AsRef<OsStr>>(&self, label: L, url: Option<U>) -> anyhow::Result<()>;
+    fn popover<F: FnOnce()>(&self, f: F);
 }
 
 impl UiExt for Ui<'_> {
@@ -24,5 +25,18 @@ impl UiExt for Ui<'_> {
             self.tooltip_text("Open in Browser");
         }
         Ok(())
+    }
+
+    fn popover<F: FnOnce()>(&self, f: F) {
+        let [x_min, y_min] = self.item_rect_min();
+        let [x_max, _] = self.item_rect_max();
+        let mid = x_min + (x_max - x_min) / 2.0;
+
+        Window::new("Popover")
+            .position([mid, y_min], nexus::imgui::Condition::Always)
+            .position_pivot([0.5, 1.0])
+            .no_nav()
+            .no_decoration()
+            .build(self, f);
     }
 }
