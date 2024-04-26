@@ -6,7 +6,7 @@ use std::{
 
 use nexus::imgui::Ui;
 
-use crate::{settings::Settings, ui::UiExt};
+use crate::ui::UiExt;
 
 pub type UploadRef = Arc<Mutex<Upload>>;
 
@@ -93,10 +93,10 @@ impl Upload {
     }
 
     fn render_wingmanurl(&self, ui: &Ui) {
-        let url = if !Settings::get().enable_wingman && self.wingmanurl.is_none() {
-            "Wingman uploads disabled"
+        let url = if let UploadStatus::WingmanSkipped = self.status {
+            "Wingman upload skipped"
         } else if self.wingmanurl.is_none() {
-            "Wingmanupload pending"
+            "Wingman upload pending"
         } else {
             self.wingmanurl.as_ref().unwrap()
         };
