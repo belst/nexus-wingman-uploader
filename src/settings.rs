@@ -119,15 +119,16 @@ impl Settings {
             .build();
         ui.same_line();
         if ui.button(if !self.edit_token { "Edit" } else { "Set" }) {
-            self.edit_token = !self.edit_token;
+            log::debug!("Clicked token button: {}", self.edit_token);
             // TODO: this is hell. updating both from the dpsreport uploader side and the settings
             // side
-            if !self.edit_token {
+            if self.edit_token {
                 let token = self.tmp_token.lock().unwrap().clone();
                 self.set_token(token.clone());
                 let report = unsafe { DPS_REPORT_HANDLER.get().unwrap() };
                 report.set_token(if token.is_empty() { None } else { Some(token) });
             }
+            self.edit_token = !self.edit_token;
         };
         ui.checkbox("Enable Wingman?", &mut self.enable_wingman);
     }

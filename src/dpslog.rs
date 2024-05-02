@@ -2,11 +2,15 @@ use std::{
     fmt::Display,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
+    time::Instant,
 };
 
-use nexus::imgui::Ui;
+use nexus::{
+    imgui::{Image, ImageButton, Ui},
+    texture::get_texture,
+};
 
-use crate::ui::UiExt;
+use crate::{dpsreportupload::DpsReportResponse, ui::UiExt};
 
 pub type UploadRef = Arc<Mutex<Upload>>;
 
@@ -66,9 +70,13 @@ pub struct Upload {
     pub status: UploadStatus,
     pub logtype: Logtype,
     pub file: PathBuf,
+    pub dpsreportobject: Option<DpsReportResponse>,
     pub dpsreporturl: Option<String>,
     pub wingmanurl: Option<String>,
 }
+
+// Icon pulsation speed
+const PULSE_SPEED: f32 = 5.0;
 
 impl Upload {
     fn basename(&self) -> String {
@@ -84,25 +92,83 @@ impl Upload {
     }
 
     fn render_dpsreuprurl(&self, ui: &Ui) {
-        if let Err(e) = ui.link(
-            self.dpsreporturl.as_deref().unwrap_or("Upload Pending"),
-            self.dpsreporturl.as_ref(),
-        ) {
-            log::error!("Error opening browser: {e}");
+        static mut TS: Option<Instant> = None;
+
+        // safety: this only gets called in the render thread
+        unsafe {
+            if TS.is_none() {
+                TS = Some(Instant::now());
+            }
+        }
+        let ts = unsafe { TS.unwrap() };
+        let Some(text) = get_texture("DPSREPORT_LOGO") else {
+            return;
+        };
+        if let Some(url) = self.dpsreporturl.as_ref() {
+            if ImageButton::new(text.id(), [16.0, 16.0])
+                .frame_padding(0)
+                .build(ui)
+            {
+                //open url
+                if let Err(e) = open::that_detached(url) {
+                    log::error!("Error opening browser: {e}");
+                }
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Open in Browser");
+            }
+        } else {
+            Image::new(text.id(), [16.0, 16.0])
+                .tint_col([
+                    1.0,
+                    1.0,
+                    1.0,
+                    (PULSE_SPEED * ts.elapsed().as_secs_f32()).sin(),
+                ])
+                .build(ui)
         }
     }
 
     fn render_wingmanurl(&self, ui: &Ui) {
-        let url = if let UploadStatus::WingmanSkipped = self.status {
-            "Wingman upload skipped"
-        } else if self.wingmanurl.is_none() {
-            "Wingman upload pending"
-        } else {
-            self.wingmanurl.as_ref().unwrap()
-        };
-        if let Err(e) = ui.link(url, self.wingmanurl.as_ref()) {
-            log::error!("Error opening browser: {e}");
+        static mut TS: Option<Instant> = None;
+
+        // safety: this only gets called in the render thread
+        unsafe {
+            if TS.is_none() {
+                TS = Some(Instant::now());
+            }
         }
+        let ts = unsafe { TS.unwrap() };
+        let Some(text) = get_texture("WINGMAN_LOGO") else {
+            return;
+        };
+        if let UploadStatus::WingmanSkipped = self.status {
+            Image::new(text.id(), [16.0, 16.0])
+                .tint_col([1.0, 1.0, 1.0, 0.5])
+                .build(ui);
+        } else if self.wingmanurl.is_none() {
+            Image::new(text.id(), [16.0, 16.0])
+                .tint_col([
+                    1.0,
+                    1.0,
+                    1.0,
+                    (ts.elapsed().as_secs_f32() * PULSE_SPEED).sin(),
+                ])
+                .build(ui);
+        } else {
+            if ImageButton::new(text.id(), [16.0, 16.0])
+                .frame_padding(0)
+                .build(ui)
+            {
+                //open url
+                if let Err(e) = open::that_detached(self.wingmanurl.as_ref().unwrap()) {
+                    log::error!("Error opening browser: {e}");
+                }
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Open in Browser");
+            }
+        };
     }
 
     fn render_status(&self, ui: &Ui) {

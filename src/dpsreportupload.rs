@@ -87,10 +87,22 @@ pub struct DpsReportResponse {
     permalink: String,
     user_token: String,
     encounter: Encounter,
+    // players: Vec<Player>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Encounter {
     boss_id: i64,
+    success: bool,
+    boss: String,
+    is_cm: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct Player {
+    display_name: String,
+    character_name: String,
+    profession: u32,
+    elite_spec: u32,
 }

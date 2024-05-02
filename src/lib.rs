@@ -15,7 +15,9 @@ use nexus::{
     keybind::{register_keybind_with_struct, Keybind},
     keybind_handler,
     paths::get_addon_dir,
-    render, AddonFlags, UpdateProvider,
+    render,
+    texture::load_texture_from_memory,
+    AddonFlags, UpdateProvider,
 };
 
 use dpsreportupload::DpsReportUploader;
@@ -51,6 +53,9 @@ static mut WATCH_EVENTS_RX: OnceLock<Mutex<Receiver<notify::Result<Event>>>> = O
 static mut WATCHER: OnceLock<RwLock<RecommendedWatcher>> = OnceLock::new();
 static mut DPS_REPORT_HANDLER: OnceLock<Arc<DpsReportUploader>> = OnceLock::new();
 
+static WINGMAN_LOGO_BYTES: &'static [u8] = include_bytes!("../wingman.png");
+static DPSREPORT_LOGO_BYTES: &'static [u8] = include_bytes!("../dpsreport.png");
+
 unsafe fn config_path() -> PathBuf {
     get_addon_dir("wingman-uploader")
         .expect("addon dir to exist")
@@ -58,6 +63,8 @@ unsafe fn config_path() -> PathBuf {
 }
 
 fn load() {
+    load_texture_from_memory("WINGMAN_LOGO", WINGMAN_LOGO_BYTES, None);
+    load_texture_from_memory("DPSREPORT_LOGO", DPSREPORT_LOGO_BYTES, None);
     unsafe {
         log::info!("Loading wingman");
         let _ = dpslog::UPLOADS.set(Vec::new());
@@ -165,6 +172,7 @@ fn render_fn(ui: &Ui) {
                             file: f,
                             dpsreporturl: None,
                             wingmanurl: None,
+                            dpsreportobject: None,
                         }))
                     }),
             );
