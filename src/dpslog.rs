@@ -78,6 +78,10 @@ pub struct Upload {
 // Icon pulsation speed
 const PULSE_SPEED: f32 = 5.0;
 
+fn pulse(t: f32) -> f32 {
+    (1.0 + t.sin()) / 2.0
+}
+
 impl Upload {
     fn basename(&self) -> String {
         let file = self
@@ -105,6 +109,7 @@ impl Upload {
             return;
         };
         if let Some(url) = self.dpsreporturl.as_ref() {
+            let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_dpsreport"));
             if ImageButton::new(text.id(), [16.0, 16.0])
                 .frame_padding(0)
                 .build(ui)
@@ -114,8 +119,9 @@ impl Upload {
                     log::error!("Error opening browser: {e}");
                 }
             }
+            push_id.end();
             if ui.is_item_hovered() {
-                ui.tooltip_text("Open in Browser");
+                ui.tooltip_text("Open log in Browser");
             }
         } else {
             Image::new(text.id(), [16.0, 16.0])
@@ -123,7 +129,7 @@ impl Upload {
                     1.0,
                     1.0,
                     1.0,
-                    (PULSE_SPEED * ts.elapsed().as_secs_f32()).sin(),
+                    pulse(PULSE_SPEED * ts.elapsed().as_secs_f32()),
                 ])
                 .build(ui)
         }
@@ -152,10 +158,11 @@ impl Upload {
                     1.0,
                     1.0,
                     1.0,
-                    (ts.elapsed().as_secs_f32() * PULSE_SPEED).sin(),
+                    pulse(ts.elapsed().as_secs_f32() * PULSE_SPEED),
                 ])
                 .build(ui);
         } else {
+            let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_wingman"));
             if ImageButton::new(text.id(), [16.0, 16.0])
                 .frame_padding(0)
                 .build(ui)
@@ -165,8 +172,9 @@ impl Upload {
                     log::error!("Error opening browser: {e}");
                 }
             }
+            push_id.end();
             if ui.is_item_hovered() {
-                ui.tooltip_text("Open in Browser");
+                ui.tooltip_text("Open wingman in Browser");
             }
         };
     }
@@ -182,11 +190,23 @@ impl Upload {
 
     fn render_retry(&mut self, ui: &Ui) {
         if let UploadStatus::Error(ref e) = self.status {
-            if ui.button("Retry") {
+            // this only gets loaded once u open the addons panel so need a custom icon
+            let Some(text) = get_texture("TEX_BTNREFRESH") else {
+                return;
+            };
+            let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_retry"));
+            if ImageButton::new(text.id(), [16.0, 16.0])
+                .frame_padding(0)
+                .build(ui)
+            {
                 match e {
                     ErrorKind::Wingman(_) => self.status = UploadStatus::DpsReportDone,
                     ErrorKind::DpsReport(_) => self.status = UploadStatus::Pending,
                 }
+            }
+            push_id.end();
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Retry");
             }
         }
     }
@@ -200,11 +220,9 @@ impl Upload {
 
         ui.table_next_column();
         self.render_dpsreuprurl(ui);
-
-        ui.table_next_column();
+        ui.same_line();
         self.render_wingmanurl(ui);
-
-        ui.table_next_column();
+        ui.same_line();
         self.render_retry(ui);
     }
 }

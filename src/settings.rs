@@ -92,7 +92,11 @@ impl Settings {
             .build();
 
         ui.same_line();
-        if ui.button(if !self.edit_path { "Edit" } else { "Set" }) {
+        if ui.button(if !self.edit_path {
+            "Edit##pathedit"
+        } else {
+            "Set##pathset"
+        }) {
             if self.edit_path {
                 if !self.verify_path() {
                     // todo how to keep this open until the next press :Thinkge:
@@ -118,7 +122,11 @@ impl Settings {
             .read_only(!self.edit_token)
             .build();
         ui.same_line();
-        if ui.button(if !self.edit_token { "Edit" } else { "Set" }) {
+        if ui.button(if !self.edit_token {
+            "Edit##tokenedit"
+        } else {
+            "Set##tokenset"
+        }) {
             log::debug!("Clicked token button: {}", self.edit_token);
             // TODO: this is hell. updating both from the dpsreport uploader side and the settings
             // side

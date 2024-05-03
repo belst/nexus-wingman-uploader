@@ -211,21 +211,9 @@ fn render_fn(ui: &Ui) {
                         user_id: Default::default(),
                     },
                     TableColumnSetup {
-                        name: "Url",
+                        name: "",
                         flags: TableColumnFlags::WIDTH_STRETCH,
                         init_width_or_weight: max_state_width + 10.0,
-                        user_id: Default::default(),
-                    },
-                    TableColumnSetup {
-                        name: "Wingman",
-                        flags: TableColumnFlags::WIDTH_STRETCH,
-                        init_width_or_weight: max_state_width + 10.0,
-                        user_id: Default::default(),
-                    },
-                    TableColumnSetup {
-                        name: "Actions",
-                        flags: TableColumnFlags::WIDTH_STRETCH,
-                        init_width_or_weight: retry_width,
                         user_id: Default::default(),
                     },
                 ],
