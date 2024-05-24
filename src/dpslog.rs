@@ -6,11 +6,11 @@ use std::{
 };
 
 use nexus::{
-    imgui::{Image, ImageButton, Ui},
+    imgui::{Image, ImageButton, MouseButton, Ui},
     texture::get_texture,
 };
 
-use crate::{dpsreportupload::DpsReportResponse, ui::UiExt};
+use crate::{dpsreportupload::DpsReportResponse, e};
 
 pub type UploadRef = Arc<Mutex<Upload>>;
 
@@ -46,14 +46,16 @@ pub enum UploadStatus {
 impl Display for UploadStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UploadStatus::Pending => f.write_str("Pending"),
-            UploadStatus::DpsReportInProgress => f.write_str("Uploading to dps.report"),
-            UploadStatus::DpsReportDone => f.write_str("Finished dps.report upload"),
-            UploadStatus::WingmanInProgress => f.write_str("Adding to wingman Queue"),
-            UploadStatus::WingmanSkipped => f.write_str("Wingman disabled or WvW Log"),
-            UploadStatus::Done => f.write_str("All done"),
-            UploadStatus::Error(ErrorKind::Wingman(_)) => f.write_str("Wingman Error"),
-            UploadStatus::Error(ErrorKind::DpsReport(_)) => f.write_str("DpsReport Error"),
+            UploadStatus::Pending => f.write_str(e("Pending").as_str()),
+            UploadStatus::DpsReportInProgress => f.write_str(e("Uploading to dps.report").as_str()),
+            UploadStatus::DpsReportDone => f.write_str(e("Finished dps.report upload").as_str()),
+            UploadStatus::WingmanInProgress => f.write_str(e("Adding to wingman Queue").as_str()),
+            UploadStatus::WingmanSkipped => f.write_str(e("Wingman disabled or WvW Log").as_str()),
+            UploadStatus::Done => f.write_str(e("All done").as_str()),
+            UploadStatus::Error(ErrorKind::Wingman(_)) => f.write_str(e("Wingman Error").as_str()),
+            UploadStatus::Error(ErrorKind::DpsReport(_)) => {
+                f.write_str(e("DpsReport Error").as_str())
+            }
         }
     }
 }
@@ -121,7 +123,10 @@ impl Upload {
             }
             push_id.end();
             if ui.is_item_hovered() {
-                ui.tooltip_text("Open log in Browser");
+                ui.tooltip_text(e("Open log in Browser (Rightclick to copy)").as_str());
+                if ui.is_mouse_clicked(MouseButton::Right) {
+                    ui.set_clipboard_text(url);
+                }
             }
         } else {
             Image::new(text.id(), [16.0, 16.0])
@@ -131,7 +136,10 @@ impl Upload {
                     1.0,
                     pulse(PULSE_SPEED * ts.elapsed().as_secs_f32()),
                 ])
-                .build(ui)
+                .build(ui);
+            if ui.is_item_hovered() {
+                ui.tooltip_text(e("Uploading..."));
+            }
         }
     }
 
@@ -152,6 +160,9 @@ impl Upload {
             Image::new(text.id(), [16.0, 16.0])
                 .tint_col([1.0, 1.0, 1.0, 0.5])
                 .build(ui);
+            if ui.is_item_hovered() {
+                ui.tooltip_text(e("Skipped"));
+            }
         } else if self.wingmanurl.is_none() {
             Image::new(text.id(), [16.0, 16.0])
                 .tint_col([
@@ -161,6 +172,9 @@ impl Upload {
                     pulse(ts.elapsed().as_secs_f32() * PULSE_SPEED),
                 ])
                 .build(ui);
+            if ui.is_item_hovered() {
+                ui.tooltip_text(e("Uploading..."));
+            }
         } else {
             let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_wingman"));
             if ImageButton::new(text.id(), [16.0, 16.0])
@@ -174,7 +188,10 @@ impl Upload {
             }
             push_id.end();
             if ui.is_item_hovered() {
-                ui.tooltip_text("Open wingman in Browser");
+                ui.tooltip_text(e("Open wingman in Browser (Rightclick to copy)").as_str());
+                if ui.is_mouse_clicked(MouseButton::Right) {
+                    ui.set_clipboard_text(self.wingmanurl.as_ref().unwrap());
+                }
             }
         };
     }
@@ -189,9 +206,9 @@ impl Upload {
     }
 
     fn render_retry(&mut self, ui: &Ui) {
-        if let UploadStatus::Error(ref e) = self.status {
+        if let UploadStatus::Error(ref err) = self.status {
             // this only gets loaded once u open the addons panel so need a custom icon
-            let Some(text) = get_texture("TEX_BTNREFRESH") else {
+            let Some(text) = get_texture("RELOAD_ICON") else {
                 return;
             };
             let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_retry"));
@@ -199,14 +216,14 @@ impl Upload {
                 .frame_padding(0)
                 .build(ui)
             {
-                match e {
+                match err {
                     ErrorKind::Wingman(_) => self.status = UploadStatus::DpsReportDone,
                     ErrorKind::DpsReport(_) => self.status = UploadStatus::Pending,
                 }
             }
             push_id.end();
             if ui.is_item_hovered() {
-                ui.tooltip_text("Retry");
+                ui.tooltip_text(e("Retry Upload (Check log for more info)").as_str());
             }
         }
     }

@@ -8,7 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{set_watch_path, ui::UiExt, unwatch, DPS_REPORT_HANDLER, WATCHER};
+use crate::{e, set_watch_path, ui::UiExt, unwatch, DPS_REPORT_HANDLER, WATCHER};
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Settings {
@@ -93,9 +93,9 @@ impl Settings {
 
         ui.same_line();
         if ui.button(if !self.edit_path {
-            "Edit##pathedit"
+            e("Edit") + "##pathedit"
         } else {
-            "Set##pathset"
+            e("Set") + "##pathset"
         }) {
             if self.edit_path {
                 if !self.verify_path() {
@@ -118,14 +118,17 @@ impl Settings {
                 self.edit_path = true;
             }
         };
-        ui.input_text("Dps Report Token", &mut *self.tmp_token.lock().unwrap())
-            .read_only(!self.edit_token)
-            .build();
+        ui.input_text(
+            e("Dps Report Token").as_str(),
+            &mut *self.tmp_token.lock().unwrap(),
+        )
+        .read_only(!self.edit_token)
+        .build();
         ui.same_line();
         if ui.button(if !self.edit_token {
-            "Edit##tokenedit"
+            e("Edit") + "##tokenedit"
         } else {
-            "Set##tokenset"
+            e("Set") + "##tokenset"
         }) {
             log::debug!("Clicked token button: {}", self.edit_token);
             // TODO: this is hell. updating both from the dpsreport uploader side and the settings
@@ -138,7 +141,7 @@ impl Settings {
             }
             self.edit_token = !self.edit_token;
         };
-        ui.checkbox("Enable Wingman?", &mut self.enable_wingman);
+        ui.checkbox(e("Enable Wingman?").as_str(), &mut self.enable_wingman);
     }
 
     fn verify_path(&self) -> bool {

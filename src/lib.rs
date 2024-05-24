@@ -14,6 +14,7 @@ use nexus::{
     imgui::{TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window},
     keybind::{register_keybind_with_struct, Keybind},
     keybind_handler,
+    localization::translate,
     paths::get_addon_dir,
     render,
     texture::load_texture_from_memory,
@@ -55,6 +56,7 @@ static mut DPS_REPORT_HANDLER: OnceLock<Arc<DpsReportUploader>> = OnceLock::new(
 
 static WINGMAN_LOGO_BYTES: &'static [u8] = include_bytes!("../wingman.png");
 static DPSREPORT_LOGO_BYTES: &'static [u8] = include_bytes!("../dpsreport.png");
+static RELOAD_ICON_BYTES: &'static [u8] = include_bytes!("../reload-icon.png");
 
 unsafe fn config_path() -> PathBuf {
     get_addon_dir("wingman-uploader")
@@ -65,6 +67,7 @@ unsafe fn config_path() -> PathBuf {
 fn load() {
     load_texture_from_memory("WINGMAN_LOGO", WINGMAN_LOGO_BYTES, None);
     load_texture_from_memory("DPSREPORT_LOGO", DPSREPORT_LOGO_BYTES, None);
+    load_texture_from_memory("RELOAD_ICON", RELOAD_ICON_BYTES, None);
     unsafe {
         log::info!("Loading wingman");
         let _ = dpslog::UPLOADS.set(Vec::new());
@@ -180,7 +183,7 @@ fn render_fn(ui: &Ui) {
     };
 
     let show_window = &mut Settings::get_mut().show_window;
-    let (_w, t) = if *show_window {
+    let (w, t) = if *show_window {
         let flags = TableFlags::BORDERS_OUTER
             | TableFlags::BORDERS_INNER_V
             | TableFlags::NO_HOST_EXTEND_X
@@ -189,23 +192,22 @@ fn render_fn(ui: &Ui) {
         let max_state_width = ui.calc_text_size(format!("{}", UploadStatus::DpsReportDone))[0];
         let max_path_width =
             ui.calc_text_size("Kanaxai, Scythe of House Aurkus\\20230719-194103.zevtc")[0];
-        let retry_width = ui.calc_text_size("Retry")[0] + 20.0; // padding
-        let w = Window::new("Wingman Uploader")
+        let w = Window::new(e("Wingman Uploader").as_str())
             .opened(show_window)
             .collapsible(false)
             .begin(ui);
         let t = w.as_ref().and_then(|_| {
             ui.begin_table_header_with_flags(
-                "Uploads",
+                e("Uploads").as_str(),
                 [
                     TableColumnSetup {
-                        name: "Status",
+                        name: e("Status").as_str(),
                         flags: TableColumnFlags::WIDTH_FIXED,
                         init_width_or_weight: max_state_width + 10.0,
                         user_id: Default::default(),
                     },
                     TableColumnSetup {
-                        name: "File",
+                        name: e("File").as_str(),
                         flags: TableColumnFlags::WIDTH_FIXED,
                         init_width_or_weight: max_path_width + 10.0,
                         user_id: Default::default(),
@@ -243,6 +245,51 @@ fn render_fn(ui: &Ui) {
             _ => {}
         }
     }
+    if let Some(t) = t {
+        t.end();
+    }
+
+    if let Some(ref _w) = w {
+        if ui.button(e("Copy all dps.report urls")) {
+            let urls = unsafe { dpslog::UPLOADS.get().unwrap() }
+                .iter()
+                .filter_map(|u| {
+                    let u = u.lock().unwrap();
+                    u.dpsreporturl.clone()
+                })
+                .fold(String::new(), |mut a, c| {
+                    a.push_str(&c);
+                    a.push_str("\r\n");
+                    a
+                });
+            // Don't overwrite clipboard if there are no urls
+            if !urls.is_empty() {
+                ui.set_clipboard_text(urls);
+            }
+        }
+        ui.same_line();
+        if ui.button(e("Copy all wingman urls")) {
+            let urls = unsafe { dpslog::UPLOADS.get().unwrap() }
+                .iter()
+                .filter_map(|u| {
+                    let u = u.lock().unwrap();
+                    u.wingmanurl.clone()
+                })
+                .fold(String::new(), |mut a, c| {
+                    a.push_str(&c);
+                    a.push_str("\r\n");
+                    a
+                });
+            // Don't overwrite clipboard if there are no urls
+            if !urls.is_empty() {
+                ui.set_clipboard_text(urls);
+            }
+        }
+    }
+}
+
+fn e(s: &str) -> String {
+    translate(s).expect("translate to return valid string")
 }
 
 fn render_options(ui: &Ui) {
