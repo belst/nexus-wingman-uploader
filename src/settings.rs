@@ -1,5 +1,5 @@
 use dirs_next::document_dir;
-use nexus::imgui::Ui;
+use nexus::imgui::{StyleColor, Ui};
 use std::{
     fs::{create_dir_all, File},
     path::{Path, PathBuf},
@@ -21,9 +21,11 @@ pub struct Settings {
     #[serde(skip)]
     edit_path: bool,
     #[serde(skip)]
-    old_path: Option<String>,
+    display_path: String,
     #[serde(skip)]
     edit_token: bool,
+    #[serde(skip)]
+    invalid_path: bool,
 }
 
 static mut SETTINGS: OnceLock<Settings> = OnceLock::new();
@@ -37,8 +39,10 @@ impl Settings {
         base
     }
     pub fn new() -> Self {
+        let p = Self::default_dir().to_string_lossy().to_string();
         Self {
-            logpath: Self::default_dir().to_string_lossy().to_string(),
+            logpath: p.clone(),
+            display_path: p,
             show_window: true,
             enable_wingman: true,
             ..Default::default()
@@ -63,8 +67,9 @@ impl Settings {
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let config = std::fs::read_to_string(path)?;
 
-        let s: Self = serde_json::from_str(&config)?;
+        let mut s: Self = serde_json::from_str(&config)?;
         *s.tmp_token.lock().unwrap() = s.dpsreport_token.read().unwrap().clone();
+        s.display_path = s.logpath.clone();
 
         Ok(s)
     }
@@ -87,7 +92,12 @@ impl Settings {
     }
 
     pub fn render(&mut self, ui: &Ui) {
-        ui.input_text("Logpath", &mut self.logpath)
+        let color = if self.invalid_path {
+            Some(ui.push_style_color(StyleColor::FrameBg, [1.0, 0.0, 0.0, 1.0]))
+        } else {
+            None
+        };
+        ui.input_text("Logpath", &mut self.display_path)
             .read_only(!self.edit_path)
             .build();
 
@@ -99,30 +109,34 @@ impl Settings {
         }) {
             if self.edit_path {
                 if !self.verify_path() {
-                    // todo how to keep this open until the next press :Thinkge:
-                    ui.popover(|| ui.text_colored([1.0, 0.0, 0.0, 1.0], format!("Invalid Path")));
+                    self.invalid_path = true;
                 } else {
+                    self.invalid_path = false;
                     self.edit_path = false;
                     // Update watcher
-                    if let Some(p) = &self.old_path {
-                        let mut w = unsafe { WATCHER.get_mut().expect("Watcher to exist") }
-                            .write()
-                            .expect("Watcher to not be poisoned");
-                        unwatch(&mut *w, p);
-                        set_watch_path(&mut *w, &self.logpath);
-                        self.old_path = None;
-                    }
+                    let mut w = unsafe { WATCHER.get_mut().expect("Watcher to exist") }
+                        .write()
+                        .expect("Watcher to not be poisoned");
+                    unwatch(&mut *w, &self.logpath);
+                    self.logpath = self.display_path.clone();
+                    set_watch_path(&mut *w, &self.logpath);
                 }
             } else {
-                self.old_path = Some(self.logpath.clone());
                 self.edit_path = true;
             }
         };
+        if self.invalid_path {
+            ui.popover(|| ui.text_colored([1.0, 0.0, 0.0, 1.0], format!("Invalid Path")));
+        }
+        if let Some(color) = color {
+            color.pop();
+        }
         ui.input_text(
             e("Dps Report Token").as_str(),
             &mut *self.tmp_token.lock().unwrap(),
         )
         .read_only(!self.edit_token)
+        .password(!self.edit_token)
         .build();
         ui.same_line();
         if ui.button(if !self.edit_token {
@@ -145,7 +159,7 @@ impl Settings {
     }
 
     fn verify_path(&self) -> bool {
-        let path = Path::new(&self.logpath);
+        let path = Path::new(&self.display_path);
         path.is_dir()
     }
 }
