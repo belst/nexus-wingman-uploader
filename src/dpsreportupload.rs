@@ -1,10 +1,13 @@
+use nexus::imgui::Ui;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{mpsc::Receiver, Arc, Mutex};
 use std::thread::{spawn, JoinHandle};
 use ureq::Agent;
 use ureq_multipart::MultipartRequest;
 
+use crate::e;
 use crate::settings::Settings;
 use crate::{agent, dpslog::Logtype, Upload, UploadStatus};
 
@@ -49,8 +52,10 @@ impl DpsReportUploader {
                 let res = self.upload_file(file);
                 match res {
                     Ok(res) => {
+                        let r = res.clone();
                         self.set_token(Some(res.user_token));
                         let mut p = path.lock().unwrap();
+                        p.dpsreportobject = Some(r);
                         p.dpsreporturl = Some(res.permalink);
                         p.status = UploadStatus::DpsReportDone;
                         p.logtype = if res.encounter.boss_id == 1 {
@@ -81,16 +86,24 @@ impl DpsReportUploader {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+enum PlayerResponse {
+    Seq(Vec<Player>),
+    Map(HashMap<String, Player>),
+}
+
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DpsReportResponse {
+    id: String,
     permalink: String,
     user_token: String,
     encounter: Encounter,
-    // players: Vec<Player>,
+    players: PlayerResponse,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Encounter {
     boss_id: i64,
@@ -99,10 +112,56 @@ struct Encounter {
     is_cm: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Player {
     display_name: String,
     character_name: String,
     profession: u32,
     elite_spec: u32,
+}
+
+impl DpsReportResponse {
+    fn boss_title(&self) -> String {
+        if self.encounter.is_cm {
+            format!("{} (CM)", self.encounter.boss)
+        } else {
+            self.encounter.boss.clone()
+        }
+    }
+    fn success(&self) -> String {
+        if self.encounter.success {
+            "Success".into()
+        } else {
+            "Failed".into()
+        }
+    }
+    pub fn render(&self, ui: &Ui) {
+        ui.tooltip(|| {
+            ui.text(self.boss_title());
+            ui.text_colored(
+                [
+                    !self.encounter.success as i32 as f32,
+                    self.encounter.success as i32 as f32,
+                    0.0,
+                    1.0,
+                ],
+                e(format!("Status: {}", self.success()).as_str()),
+            );
+            if let Some(_table) = ui.begin_table(self.id.as_str(), 2) {
+                let it = match &self.players {
+                    PlayerResponse::Seq(ref v) => {
+                        Box::new(v.iter()) as Box<dyn Iterator<Item = &Player>>
+                    }
+                    PlayerResponse::Map(ref m) => Box::new(m.values()),
+                };
+                for p in it {
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text(p.character_name.as_str());
+                    ui.table_next_column();
+                    ui.text(p.display_name.as_str());
+                }
+            }
+        });
+    }
 }

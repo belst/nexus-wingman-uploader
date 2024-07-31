@@ -97,7 +97,7 @@ impl Upload {
         file.trim_end_matches('\\').to_string()
     }
 
-    fn render_dpsreuprurl(&self, ui: &Ui) {
+    fn render_dpsreuprurl(&self, ui: &Ui) -> bool {
         static mut TS: Option<Instant> = None;
 
         // safety: this only gets called in the render thread
@@ -108,7 +108,7 @@ impl Upload {
         }
         let ts = unsafe { TS.unwrap() };
         let Some(text) = get_texture("DPSREPORT_LOGO") else {
-            return;
+            return false;
         };
         if let Some(url) = self.dpsreporturl.as_ref() {
             let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_dpsreport"));
@@ -122,12 +122,14 @@ impl Upload {
                 }
             }
             push_id.end();
-            if ui.is_item_hovered() {
+            let hovered = ui.is_item_hovered();
+            if hovered {
                 ui.tooltip_text(e("Open log in Browser (Rightclick to copy)").as_str());
                 if ui.is_mouse_clicked(MouseButton::Right) {
                     ui.set_clipboard_text(url);
                 }
             }
+            hovered
         } else {
             Image::new(text.id(), [16.0, 16.0])
                 .tint_col([
@@ -137,13 +139,15 @@ impl Upload {
                     pulse(PULSE_SPEED * ts.elapsed().as_secs_f32()),
                 ])
                 .build(ui);
-            if ui.is_item_hovered() {
+            let hovered = ui.is_item_hovered();
+            if hovered {
                 ui.tooltip_text(e("Uploading..."));
             }
+            hovered
         }
     }
 
-    fn render_wingmanurl(&self, ui: &Ui) {
+    fn render_wingmanurl(&self, ui: &Ui) -> bool {
         static mut TS: Option<Instant> = None;
 
         // safety: this only gets called in the render thread
@@ -154,15 +158,17 @@ impl Upload {
         }
         let ts = unsafe { TS.unwrap() };
         let Some(text) = get_texture("WINGMAN_LOGO") else {
-            return;
+            return false;
         };
         if let UploadStatus::WingmanSkipped = self.status {
             Image::new(text.id(), [16.0, 16.0])
                 .tint_col([1.0, 1.0, 1.0, 0.5])
                 .build(ui);
-            if ui.is_item_hovered() {
+            let hovered = ui.is_item_hovered();
+            if hovered {
                 ui.tooltip_text(e("Skipped"));
             }
+            hovered
         } else if self.wingmanurl.is_none() {
             Image::new(text.id(), [16.0, 16.0])
                 .tint_col([
@@ -172,9 +178,11 @@ impl Upload {
                     pulse(ts.elapsed().as_secs_f32() * PULSE_SPEED),
                 ])
                 .build(ui);
-            if ui.is_item_hovered() {
+            let hovered = ui.is_item_hovered();
+            if hovered {
                 ui.tooltip_text(e("Uploading..."));
             }
+            hovered
         } else {
             let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_wingman"));
             if ImageButton::new(text.id(), [16.0, 16.0])
@@ -187,29 +195,33 @@ impl Upload {
                 }
             }
             push_id.end();
-            if ui.is_item_hovered() {
+            let hovered = ui.is_item_hovered();
+            if hovered {
                 ui.tooltip_text(e("Open wingman in Browser (Rightclick to copy)").as_str());
                 if ui.is_mouse_clicked(MouseButton::Right) {
                     ui.set_clipboard_text(self.wingmanurl.as_ref().unwrap());
                 }
             }
-        };
-    }
-
-    fn render_status(&self, ui: &Ui) {
-        ui.text(format!("{}", self.status));
-        if let UploadStatus::Error(ref e) = self.status {
-            if ui.is_item_hovered() {
-                ui.tooltip_text(format!("{e}"));
-            }
+            hovered
         }
     }
 
-    fn render_retry(&mut self, ui: &Ui) {
+    fn render_status(&self, ui: &Ui) -> bool {
+        ui.text(format!("{}", self.status));
+        let hovered = ui.is_item_hovered();
+        if let UploadStatus::Error(ref e) = self.status {
+            if hovered {
+                ui.tooltip_text(format!("{e}"));
+            }
+        }
+        hovered
+    }
+
+    fn render_retry(&mut self, ui: &Ui) -> bool {
         if let UploadStatus::Error(ref err) = self.status {
             // this only gets loaded once u open the addons panel so need a custom icon
             let Some(text) = get_texture("RELOAD_ICON") else {
-                return;
+                return false;
             };
             let push_id = ui.push_id(&(self.file.to_string_lossy() + "btn_retry"));
             if ImageButton::new(text.id(), [16.0, 16.0])
@@ -222,18 +234,24 @@ impl Upload {
                 }
             }
             push_id.end();
-            if ui.is_item_hovered() {
+            let hovered = ui.is_item_hovered();
+            if hovered {
                 ui.tooltip_text(e("Retry Upload (Check log for more info)").as_str());
             }
+            hovered
+        } else {
+            false
         }
     }
 
+    /// Returns true if the row was hovered
     pub fn render_row(&mut self, ui: &Ui) {
         ui.table_next_column();
         self.render_status(ui);
 
         ui.table_next_column();
         ui.text(self.basename());
+        ui.is_item_hovered();
 
         ui.table_next_column();
         self.render_dpsreuprurl(ui);

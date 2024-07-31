@@ -27,6 +27,7 @@ use notify::{
     Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 use settings::Settings;
+use ui::UiExt;
 use ureq::AgentBuilder;
 use wingmanupload::WingmanUploader;
 
@@ -120,9 +121,11 @@ fn load() {
 
 const KB_IDENTIFIER: &'static str = "KB_OPEN_WINGMAN_UPLOADS";
 
-fn keypress(_: &str) {
-    let settings = Settings::get_mut();
-    settings.show_window = !settings.show_window;
+fn keypress(_: &str, is_release: bool) {
+    if !is_release {
+        let settings = Settings::get_mut();
+        settings.show_window = !settings.show_window;
+    }
 }
 
 fn set_watch_path<W: Watcher, P: AsRef<Path>>(w: &mut W, path: P) {
@@ -188,7 +191,8 @@ fn render_fn(ui: &Ui) {
             | TableFlags::BORDERS_INNER_V
             | TableFlags::NO_HOST_EXTEND_X
             | TableFlags::SIZING_FIXED_FIT
-            | TableFlags::NO_PAD_INNER_X;
+            | TableFlags::NO_PAD_INNER_X
+            | TableFlags::NO_CLIP;
         let max_state_width = ui.calc_text_size(format!("{}", UploadStatus::DpsReportDone))[0];
         let max_path_width =
             ui.calc_text_size("Kanaxai, Scythe of House Aurkus\\20230719-194103.zevtc")[0];
@@ -230,6 +234,12 @@ fn render_fn(ui: &Ui) {
         let mut u = upload.lock().unwrap();
         if let Some(ref _t) = t {
             u.render_row(ui);
+            let hovered = ui.table_row_hovered(_t);
+            if let Some(ref dpsreport) = u.dpsreportobject {
+                if hovered {
+                    dpsreport.render(ui);
+                }
+            }
         }
         match u.status {
             UploadStatus::Pending => {

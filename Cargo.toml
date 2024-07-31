@@ -1,6 +1,6 @@
 [package]
 name = "wingman-uploader"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 description = "Wingman Uploader"
 authors = ["belst"]
@@ -40,4 +40,3 @@ features = [
 [target.'cfg(windows)'.dependencies.nexus]
 git = "https://github.com/Zerthox/nexus-rs"
 features = ["log"]
-

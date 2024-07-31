@@ -1,10 +1,12 @@
 use std::ffi::OsStr;
 
-use nexus::imgui::{StyleColor, Ui, Window};
+use nexus::imgui::{StyleColor, TableToken, Ui, Window};
 
 pub trait UiExt {
     fn link<L: AsRef<str>, U: AsRef<OsStr>>(&self, label: L, url: Option<U>) -> anyhow::Result<()>;
     fn popover<F: FnOnce()>(&self, f: F);
+    // _t is unused, but required to make sure we only call this inside an active table
+    fn table_row_hovered(&self, _t: &TableToken) -> bool;
 }
 
 impl UiExt for Ui<'_> {
@@ -38,5 +40,30 @@ impl UiExt for Ui<'_> {
             .no_nav()
             .no_decoration()
             .build(self, f);
+    }
+
+    fn table_row_hovered(&self, _t: &TableToken) -> bool {
+        // use start to get the y position of the row
+        let start = self.cursor_pos();
+        let style = self.clone_style();
+        let window_padding = style.window_padding;
+        let frame_padding = style.frame_padding;
+        let mut wmin = self.window_pos();
+        let wsize = self.window_size();
+        wmin[0] += window_padding[0];
+        wmin[1] += start[1] - frame_padding[1];
+        let frame_height = self.frame_height();
+        let wmax = [
+            wmin[0] + wsize[0] - window_padding[0] * 2.0,
+            wmin[1] + frame_height,
+        ];
+        if self.is_current_mouse_pos_valid()
+            && self.is_rect_visible(wmin, wmax)
+            && self.is_mouse_hovering_rect(wmin, wmax)
+        {
+            true
+        } else {
+            false
+        }
     }
 }
