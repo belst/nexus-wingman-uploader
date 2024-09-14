@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{mpsc::Receiver, Arc, Mutex};
 use std::thread::{spawn, JoinHandle};
-use ureq::Agent;
+use ureq::{Agent, Response};
 use ureq_multipart::MultipartRequest;
 
 use crate::e;
@@ -67,14 +67,26 @@ impl DpsReportUploader {
                     Err(e) => {
                         let mut p = path.lock().unwrap();
                         log::error!("[DpsReportUploader] Error Uploading: {e}");
-                        p.status = UploadStatus::Error(crate::dpslog::ErrorKind::DpsReport(e));
+                        use crate::error::Error as E;
+                        use ureq::Error as UreqError;
+                        let error = E::Unknown(anyhow::anyhow!("{e}"));
+                        match e {
+                            E::Ureq(UreqError::Status(_, body)) => {
+                                log::error!(
+                                    "[DpsReportUploader] Body: {:?}",
+                                    body.into_json::<serde_json::Value>()
+                                );
+                            }
+                            _ => {}
+                        }
+                        p.status = UploadStatus::Error(crate::dpslog::ErrorKind::DpsReport(error));
                     }
                 }
             }
         })
     }
 
-    fn upload_file(&self, path: PathBuf) -> Result<DpsReportResponse, anyhow::Error> {
+    fn upload_file(&self, path: PathBuf) -> Result<DpsReportResponse, crate::error::Error> {
         let mut req = self
             .client
             .post("https://dps.report/uploadContent")

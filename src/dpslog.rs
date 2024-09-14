@@ -19,7 +19,7 @@ pub static mut UPLOADS: OnceLock<Vec<UploadRef>> = OnceLock::new();
 #[derive(Debug)]
 pub enum ErrorKind {
     Wingman(anyhow::Error),
-    DpsReport(anyhow::Error),
+    DpsReport(crate::error::Error),
 }
 
 impl Display for ErrorKind {
@@ -41,6 +41,22 @@ pub enum UploadStatus {
     WingmanSkipped,
     Done,
     Error(ErrorKind),
+}
+
+impl PartialEq for UploadStatus {
+    fn eq(&self, other: &Self) -> bool {
+        use UploadStatus as US;
+        match (self, other) {
+            (US::Pending, US::Pending)
+            | (US::DpsReportInProgress, US::DpsReportInProgress)
+            | (US::DpsReportDone, US::DpsReportDone)
+            | (US::WingmanInProgress, US::WingmanInProgress)
+            | (US::WingmanSkipped, US::WingmanSkipped)
+            | (US::Done, US::Done)
+            | (US::Error(_), US::Error(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Display for UploadStatus {
@@ -85,6 +101,19 @@ fn pulse(t: f32) -> f32 {
 }
 
 impl Upload {
+    pub fn sanity_check(&mut self) {
+        if self.dpsreporturl.is_some()
+            && self.dpsreportobject.is_some()
+            && (self.status == UploadStatus::Pending
+                || self.status == UploadStatus::DpsReportInProgress)
+        {
+            log::warn!("Sanity check failed, resetting status: {self:?}");
+            self.status = UploadStatus::DpsReportDone;
+        } else if self.status != UploadStatus::Done && self.wingmanurl.is_some() {
+            log::warn!("Sanity check failed, resetting status: {self:?}");
+            self.status = UploadStatus::Done;
+        }
+    }
     fn basename(&self) -> String {
         let file = self
             .file

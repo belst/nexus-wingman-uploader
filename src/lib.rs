@@ -33,6 +33,7 @@ use wingmanupload::WingmanUploader;
 
 mod dpslog;
 mod dpsreportupload;
+mod error;
 mod settings;
 mod ui;
 mod wingmanupload;
@@ -232,6 +233,7 @@ fn render_fn(ui: &Ui) {
     };
     for upload in unsafe { dpslog::UPLOADS.get().unwrap() } {
         let mut u = upload.lock().unwrap();
+        u.sanity_check();
         if let Some(ref _t) = t {
             u.render_row(ui);
             let hovered = ui.table_row_hovered(_t);

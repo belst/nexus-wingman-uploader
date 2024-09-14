@@ -1330,7 +1330,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "wingman-uploader"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "atomic_float",
@@ -1343,6 +1343,7 @@ dependencies = [
  "open",
  "serde",
  "serde_json",
+ "thiserror",
  "ureq",
  "ureq_multipart",
  "windows 0.56.0",

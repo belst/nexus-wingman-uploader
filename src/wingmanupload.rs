@@ -3,12 +3,20 @@ use std::{
     thread::{spawn, JoinHandle},
 };
 
+use serde::Deserialize;
 use ureq::Agent;
 
 use crate::{agent, Upload, UploadStatus};
 
 pub struct WingmanUploader {
     client: Agent,
+}
+
+#[derive(Deserialize, Debug)]
+struct LogQueueResponse {
+    link: String,
+    note: String,
+    success: i32,
 }
 
 impl WingmanUploader {
@@ -19,15 +27,15 @@ impl WingmanUploader {
     fn upload(&self, url: &str) -> anyhow::Result<()> {
         let response = self
             .client
-            .get("https://gw2wingman.nevermindcreations.de/manualUploadOne")
+            .get("https://gw2wingman.nevermindcreations.de/api/importLogQueued")
             .query("link", url)
-            .call()?;
+            .call()?
+            .into_json()
+            .map(|r: LogQueueResponse| r.success != 0)
+            .map_err(|e| log::trace!("[WingmanUploader] Error parsing response: {e}"))
+            .unwrap_or(false);
 
-        if !response
-            .into_string()
-            .map(|s| s.contains("✔️"))
-            .unwrap_or(false)
-        {
+        if !response {
             anyhow::bail!("Response does not contain ✔️");
         }
 
