@@ -9,6 +9,7 @@ use nexus::{
     imgui::{Image, ImageButton, MouseButton, Ui},
     texture::get_texture,
 };
+use revtc::evtc::Encounter;
 
 use crate::{dpsreportupload::DpsReportResponse, e};
 
@@ -20,6 +21,34 @@ pub static mut UPLOADS: OnceLock<Vec<UploadRef>> = OnceLock::new();
 pub enum ErrorKind {
     Wingman(anyhow::Error),
     DpsReport(crate::error::Error),
+    Parser(anyhow::Error),
+}
+
+impl PartialEq for ErrorKind {
+    fn eq(&self, other: &Self) -> bool {
+        use ErrorKind as EK;
+        match (self, other) {
+            (EK::DpsReport(_), EK::DpsReport(_))
+            | (EK::Wingman(_), EK::Wingman(_))
+            | (EK::Parser(_), EK::Parser(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+impl PartialOrd for ErrorKind {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use ErrorKind as EK;
+        match (self, other) {
+            (EK::DpsReport(_), EK::DpsReport(_))
+            | (EK::Wingman(_), EK::Wingman(_))
+            | (EK::Parser(_), EK::Parser(_)) => Some(std::cmp::Ordering::Equal),
+            (EK::DpsReport(_), _) => Some(std::cmp::Ordering::Less),
+            (_, EK::DpsReport(_)) => Some(std::cmp::Ordering::Greater),
+            (EK::Wingman(_), _) => Some(std::cmp::Ordering::Less),
+            (_, EK::Wingman(_)) => Some(std::cmp::Ordering::Greater),
+        }
+    }
 }
 
 impl Display for ErrorKind {
@@ -27,14 +56,17 @@ impl Display for ErrorKind {
         match self {
             ErrorKind::DpsReport(e) => write!(f, "[DpsReport] Error: {e}"),
             ErrorKind::Wingman(e) => write!(f, "[Wingman] Error: {e}"),
+            ErrorKind::Parser(e) => write!(f, "[Parser] Error: {e}"),
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialOrd)]
 pub enum UploadStatus {
     #[default]
     Pending,
+    Parsing,
+    ParsingDone,
     DpsReportInProgress,
     DpsReportDone,
     WingmanInProgress,
@@ -53,6 +85,8 @@ impl PartialEq for UploadStatus {
             | (US::WingmanInProgress, US::WingmanInProgress)
             | (US::WingmanSkipped, US::WingmanSkipped)
             | (US::Done, US::Done)
+            | (US::Parsing, US::Parsing)
+            | (US::ParsingDone, US::ParsingDone)
             | (US::Error(_), US::Error(_)) => true,
             _ => false,
         }
@@ -63,6 +97,8 @@ impl Display for UploadStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UploadStatus::Pending => f.write_str(e("Pending").as_str()),
+            UploadStatus::Parsing => f.write_str(e("Parsing").as_str()),
+            UploadStatus::ParsingDone => f.write_str(e("Parsing Done").as_str()),
             UploadStatus::DpsReportInProgress => f.write_str(e("Uploading to dps.report").as_str()),
             UploadStatus::DpsReportDone => f.write_str(e("Finished dps.report upload").as_str()),
             UploadStatus::WingmanInProgress => f.write_str(e("Adding to wingman Queue").as_str()),
@@ -72,6 +108,7 @@ impl Display for UploadStatus {
             UploadStatus::Error(ErrorKind::DpsReport(_)) => {
                 f.write_str(e("DpsReport Error").as_str())
             }
+            UploadStatus::Error(ErrorKind::Parser(_)) => f.write_str(e("Parsing Error").as_str()),
         }
     }
 }
@@ -89,6 +126,7 @@ pub struct Upload {
     pub logtype: Logtype,
     pub file: PathBuf,
     pub dpsreportobject: Option<DpsReportResponse>,
+    pub encounter: Option<Encounter>,
     pub dpsreporturl: Option<String>,
     pub wingmanurl: Option<String>,
 }
@@ -102,10 +140,12 @@ fn pulse(t: f32) -> f32 {
 
 impl Upload {
     pub fn sanity_check(&mut self) {
-        if self.dpsreporturl.is_some()
+        if self.encounter.is_some() && self.status < UploadStatus::ParsingDone {
+            log::warn!("Sanity check failed, resetting status: {self:?}");
+            self.status = UploadStatus::ParsingDone;
+        } else if self.dpsreporturl.is_some()
             && self.dpsreportobject.is_some()
-            && (self.status == UploadStatus::Pending
-                || self.status == UploadStatus::DpsReportInProgress)
+            && self.status < UploadStatus::DpsReportDone
         {
             log::warn!("Sanity check failed, resetting status: {self:?}");
             self.status = UploadStatus::DpsReportDone;
@@ -259,7 +299,8 @@ impl Upload {
             {
                 match err {
                     ErrorKind::Wingman(_) => self.status = UploadStatus::DpsReportDone,
-                    ErrorKind::DpsReport(_) => self.status = UploadStatus::Pending,
+                    ErrorKind::DpsReport(_) => self.status = UploadStatus::ParsingDone,
+                    ErrorKind::Parser(_) => self.status = UploadStatus::Pending,
                 }
             }
             push_id.end();

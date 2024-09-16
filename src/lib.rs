@@ -34,6 +34,7 @@ use wingmanupload::WingmanUploader;
 mod dpslog;
 mod dpsreportupload;
 mod error;
+mod evtcparsing;
 mod settings;
 mod ui;
 mod wingmanupload;
@@ -50,6 +51,7 @@ pub fn agent() -> ureq::Agent {
 // TODO: Less mutable statics everywhere. remove a lot of unsafe
 // Everything mut so we can .take() on unload to clean up
 static mut THREADS: OnceLock<Vec<JoinHandle<()>>> = OnceLock::new();
+static mut EVTC_TX: OnceLock<Sender<UploadRef>> = OnceLock::new();
 static mut FILEPATH_TX: OnceLock<Sender<UploadRef>> = OnceLock::new();
 static mut DPSURL_TX: OnceLock<Sender<UploadRef>> = OnceLock::new();
 static mut WATCH_EVENTS_RX: OnceLock<Mutex<Receiver<notify::Result<Event>>>> = OnceLock::new();
@@ -88,11 +90,17 @@ fn load() {
         THREADS
             .get_mut()
             .unwrap()
-            .push(dpsreport.clone().run(filepath_rx));
+            .push(evtcparsing::run(filepath_rx));
+        let (evtc_tx, evtc_rx) = mpsc::channel();
+        THREADS
+            .get_mut()
+            .unwrap()
+            .push(dpsreport.clone().run(evtc_rx));
         let _ = DPS_REPORT_HANDLER.set(dpsreport);
         let (dpsurl_tx, dpsurl_rx) = mpsc::channel();
         let wingman = WingmanUploader::new();
         THREADS.get_mut().unwrap().push(wingman.run(dpsurl_rx));
+        let _ = EVTC_TX.set(evtc_tx);
         let _ = FILEPATH_TX.set(filepath_tx);
         let _ = DPSURL_TX.set(dpsurl_tx);
 
@@ -149,6 +157,7 @@ fn unload() {
         unwatch(&mut *watcher, arclogspath);
         drop(watcher);
         drop(FILEPATH_TX.take());
+        drop(EVTC_TX.take());
         drop(DPSURL_TX.take());
         let _ = Settings::take().unwrap().store(config_path());
         for t in THREADS.take().unwrap() {
@@ -178,6 +187,7 @@ fn render_fn(ui: &Ui) {
                             logtype: Default::default(),
                             file: f,
                             dpsreporturl: None,
+                            encounter: None,
                             wingmanurl: None,
                             dpsreportobject: None,
                         }))
@@ -246,6 +256,9 @@ fn render_fn(ui: &Ui) {
         match u.status {
             UploadStatus::Pending => {
                 let _ = unsafe { FILEPATH_TX.get().unwrap() }.send(upload.clone());
+            }
+            UploadStatus::ParsingDone => {
+                let _ = unsafe { EVTC_TX.get().unwrap() }.send(upload.clone());
             }
             UploadStatus::DpsReportDone => {
                 if u.logtype == dpslog::Logtype::Pve && Settings::get().enable_wingman {
