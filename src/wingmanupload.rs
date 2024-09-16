@@ -63,7 +63,7 @@ impl WingmanUploader {
         let _response = self
             .client
             // .post("https://gw2wingman.nevermindcreations.de/uploadEVTC")
-            .post("http://new.bel.st:3334/evtc")
+            .post("https://evtc.bel.st/evtc")
             .set("Content-Type", &content_type)
             .send_bytes(data.as_slice())?
             .into_json()
