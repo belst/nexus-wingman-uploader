@@ -114,11 +114,19 @@ fn validate_path(path: &str) -> bool {
 
 pub fn render(ui: &Ui) {
     thread_local! {
-        static LOGPATH: RefCell<String> = RefCell::new(SETTINGS.lock().unwrap().logpath.clone());
+        static LOGPATH: RefCell<String> = RefCell::new(String::new());
         static PATH_VALID: Cell<bool> = Cell::new(true);
         static PATH_EDIT: Cell<bool> = Cell::new(false);
-        static DPSREPORT_TOKEN: RefCell<String> = RefCell::new(SETTINGS.lock().unwrap().dpsreport_token.clone());
+        static DPSREPORT_TOKEN: RefCell<String> = RefCell::new(String::new());
         static EDIT_TOKEN: Cell<bool> = Cell::new(false);
+        static INITIALIZED: Cell<bool> = Cell::new(false);
+    }
+
+    if !INITIALIZED.get() {
+        let settings = SETTINGS.lock().unwrap();
+        LOGPATH.set(settings.logpath.clone());
+        DPSREPORT_TOKEN.set(settings.dpsreport_token.clone());
+        INITIALIZED.set(true);
     }
 
     let color = if !PATH_VALID.get() {

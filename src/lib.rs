@@ -275,10 +275,13 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
         }
         // TODO: Settings to check if we should skip
         if matches!(l.dpsreport, Step::Pending) {
-            let enabled = Settings::get().enable_dpsreport();
+            let settings = Settings::get();
+            let enabled = settings.enable_dpsreport();
+            let token = settings.dpsreport_token.clone();
+            drop(settings);
             if enabled {
                 l.dpsreport = Step::Active;
-                if let Err(e) = dps_tx.send((i, l.location.clone())) {
+                if let Err(e) = dps_tx.send((i, l.location.clone(), token)) {
                     log::error!("Failed to send dpsreport job: {e}");
                 }
             } else {
@@ -416,5 +419,5 @@ nexus::export! {
     unload,
     provider: UpdateProvider::GitHub,
     update_link: "https://github.com/belst/nexus-wingman-uploader",
-    log_filter: "ureq=warn,ureq_multipart=warn,trace"
+    log_filter: "trace,ureq=warn,ureq_multipart=warn"
 }

@@ -10,17 +10,16 @@ use serde::Deserialize;
 use ureq::Response;
 use ureq_multipart::MultipartRequest;
 
-use crate::{common::WorkerMessage, settings::Settings};
+use crate::common::WorkerMessage;
 
-pub type DpsJob = (usize, PathBuf);
+pub type DpsJob = (usize, PathBuf, String);
 thread_local! {
     static CLIENT: ureq::Agent = ureq::agent()
 }
 pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        for (index, location) in inc {
+        for (index, location, token) in inc {
             log::info!("dpsreport for {:?}", location);
-            let token: String = Settings::get().dpsreport_token().into();
             let res = match upload_file(location, &token) {
                 Err(e) => {
                     log::error!("[DpsReport] Failed to upload file: {e}");
