@@ -1,0 +1,29 @@
+[package]
+name = "log-uploader"
+version = "5.1.0"
+edition = "2021"
+authors = ["belst"]
+description = "Uploads new arcdps logs to dps.report and/or wingman"
+
+[lib]
+crate-type = ["cdylib"]
+
+
+[dependencies]
+anyhow = "1.0.89"
+chrono = { version = "0.4.38", features = ["clock"] }
+dirs-next = "2.0.0"
+log = "0.4.22"
+notify = "6.1.1"
+open = "5.3.0"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+ureq = { version = "2.10.1", features = ["json"] }
+ureq_multipart = "1.1.1"
+
+[dependencies.revtc]
+git = "https://github.com/belst/revtc"
+
+[dependencies.nexus]
+git = "https://github.com/Zerthox/nexus-rs"
+features = ["log"]
