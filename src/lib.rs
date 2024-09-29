@@ -23,15 +23,15 @@ use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use settings::Settings;
 use util::e;
 
-pub mod arcdpslog;
-pub mod assets;
-pub mod common;
-pub mod dpsreport;
-pub mod evtc;
-pub mod filewatcher;
-pub mod settings;
-pub mod util;
-pub mod wingman;
+mod arcdpslog;
+mod assets;
+mod common;
+mod dpsreport;
+mod evtc;
+mod filewatcher;
+mod settings;
+mod util;
+mod wingman;
 
 // TODO: grep for all the `let _ =` and add error handling
 // TODO: Implement actual dpsreport
@@ -273,13 +273,14 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
             log::error!("Failed to parse evtc for {}: {e}", l.location.display());
             continue;
         }
-        // TODO: Settings to check if we should skip
         if matches!(l.dpsreport, Step::Pending) {
             let settings = Settings::get();
             let enabled = settings.enable_dpsreport();
             let token = settings.dpsreport_token.clone();
-            drop(settings);
-            if enabled {
+            let Step::Done(ref enc) = l.evtc else {
+                unreachable!()
+            };
+            if enabled && !settings.filter_dpsreport.contains(&enc.header.boss_id) {
                 l.dpsreport = Step::Active;
                 if let Err(e) = dps_tx.send((i, l.location.clone(), token)) {
                     log::error!("Failed to send dpsreport job: {e}");
@@ -289,27 +290,26 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
             }
         }
         if matches!(l.wingman, Step::Pending) {
-            let enabled = Settings::get().enable_wingman();
-            if enabled {
+            let settings = Settings::get();
+            let enabled = settings.enable_wingman;
+            let Step::Done(ref enc) = l.evtc else {
+                unreachable!()
+            };
+            if enabled
+                && enc.header.boss_id != 1
+                && !settings.filter_wingman.contains(&enc.header.boss_id)
+            {
                 // I wonder if I can do this without the if check since this is guaranteed to be
                 // done
-                if let Step::Done(ref enc) = l.evtc {
-                    // Don't send wvw logs to wingman
-                    if enc.header.boss_id == 1 {
-                        l.wingman = Step::Skipped;
-                    } else {
-                        l.wingman = Step::Active;
-                        let _ = wingman_tx.send((
-                            i,
-                            l.location.clone(),
-                            // Error handling on missing pov (broken log?)
-                            enc.pov.clone().map(|a| a.account_name).unwrap_or_default(),
-                            enc.header.boss_id,
-                        ));
-                    }
-                } else {
-                    // maybe this is enough
-                    unreachable!()
+                l.wingman = Step::Active;
+                if let Err(e) = wingman_tx.send((
+                    i,
+                    l.location.clone(),
+                    // Error handling on missing pov (broken log?)
+                    enc.pov.clone().map(|a| a.account_name).unwrap_or_default(),
+                    enc.header.boss_id,
+                )) {
+                    log::error!("Failed to send wingman job: {e}");
                 }
             } else {
                 l.wingman = Step::Skipped;
@@ -419,5 +419,5 @@ nexus::export! {
     unload,
     provider: UpdateProvider::GitHub,
     update_link: "https://github.com/belst/nexus-wingman-uploader",
-    log_filter: "trace,ureq=warn,ureq_multipart=warn"
+    log_filter: "ureq=warn,ureq_multipart=warn"
 }

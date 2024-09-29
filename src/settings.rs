@@ -29,6 +29,10 @@ pub struct Settings {
     pub enable_dpsreport: bool,
     #[serde(default = "default_true")]
     pub enable_wingman: bool,
+    #[serde(default)]
+    pub filter_dpsreport: Vec<u16>,
+    #[serde(default)]
+    pub filter_wingman: Vec<u16>,
 }
 
 impl Settings {
@@ -39,6 +43,8 @@ impl Settings {
             show_window: true,
             enable_dpsreport: true,
             enable_wingman: true,
+            filter_wingman: Vec::new(),
+            filter_dpsreport: Vec::new(),
         }
     }
 
@@ -118,6 +124,8 @@ pub fn render(ui: &Ui) {
         static PATH_VALID: Cell<bool> = Cell::new(true);
         static PATH_EDIT: Cell<bool> = Cell::new(false);
         static DPSREPORT_TOKEN: RefCell<String> = RefCell::new(String::new());
+        static FILTER_WINGMAN: RefCell<Vec<u16>> = RefCell::new(Vec::new());
+        static FILTER_DPSREPORT: RefCell<Vec<u16>> = RefCell::new(Vec::new());
         static EDIT_TOKEN: Cell<bool> = Cell::new(false);
         static INITIALIZED: Cell<bool> = Cell::new(false);
     }
@@ -126,6 +134,8 @@ pub fn render(ui: &Ui) {
         let settings = SETTINGS.lock().unwrap();
         LOGPATH.set(settings.logpath.clone());
         DPSREPORT_TOKEN.set(settings.dpsreport_token.clone());
+        FILTER_WINGMAN.set(settings.filter_wingman.clone());
+        FILTER_DPSREPORT.set(settings.filter_dpsreport.clone());
         INITIALIZED.set(true);
     }
 
@@ -200,7 +210,100 @@ pub fn render(ui: &Ui) {
         }
         EDIT_TOKEN.set(!EDIT_TOKEN.get())
     }
+    ui.separator();
     ui.checkbox(e("Enable dps.report"), &mut settings.enable_dpsreport);
+    ui.text("Don't upload logs to dps.report with the following boss ids:");
+    if ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text(
+                "You can check your log folder for the boss ids. It is the number in parentheses.",
+            );
+            ui.text("For example: Gorseval the Multifarious (15429)");
+            ui.text("The boss id would be 15429.");
+            ui.text("Click to open log folder.");
+        })
+    }) {
+        if let Err(e) = open::that_detached(&settings.logpath) {
+            log::error!("Failed to open log folder: {e}");
+        }
+    }
+    render_dpsreport_filter(ui, &mut settings.filter_dpsreport);
+    ui.separator();
     // wingman
     ui.checkbox(e("Enable Wingman"), &mut settings.enable_wingman);
+    ui.text("Don't upload logs to Wingman with the following boss ids:");
+    if ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text(
+                "You can check your log folder for the boss ids. It is the number in parentheses.",
+            );
+            ui.text("For example: Large Kitty Golem (19676)");
+            ui.text("The boss id would be 19676.");
+            ui.text("WvW logs are skipped by default. (ID: 1)");
+            ui.text("Click to open log folder.");
+        })
+    }) {
+        if let Err(e) = open::that_detached(&settings.logpath) {
+            log::error!("Failed to open log folder: {e}");
+        }
+    }
+    render_wingman_filter(ui, &mut settings.filter_wingman);
+}
+
+fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {
+    let _t = ui.begin_table("dpsreport filter", 2);
+    let mut to_remove = Vec::new();
+    for (i, id) in filter.iter().enumerate() {
+        ui.table_next_row();
+        ui.table_next_column();
+        ui.text(format!("{}", id));
+        ui.table_next_column();
+        if ui.button(e("remove") + &format!("##dpsremove{i}")) {
+            to_remove.push(i);
+        }
+    }
+    for tr in to_remove {
+        filter.remove(tr);
+    }
+    ui.table_next_row();
+    ui.table_next_column();
+    thread_local! {
+        static ID: Cell<i32> = Cell::new(0);
+    }
+    let mut id = ID.get();
+    ui.input_int(e("ID##dpsreportfilterinput"), &mut id).build();
+    ID.set(id);
+    ui.table_next_column();
+    if ui.button(e("Add ID##dpsreportfilterid")) {
+        filter.push(id as u16);
+    }
+}
+fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
+    let _t = ui.begin_table("wingman filter", 2);
+    let mut to_remove = Vec::new();
+    for (i, id) in filter.iter().enumerate() {
+        ui.table_next_row();
+        ui.table_next_column();
+        ui.text(format!("{}", id));
+        ui.table_next_column();
+        if ui.button(e("remove") + &format!("##wingmanfilterremove{i}")) {
+            to_remove.push(i);
+        }
+    }
+    for tr in to_remove {
+        filter.remove(tr);
+    }
+    ui.table_next_row();
+    ui.table_next_column();
+    thread_local! {
+        static ID: Cell<i32> = Cell::new(0);
+    }
+    let mut id = ID.get();
+    ui.input_int(e("Add ID##wingmanfilterinput"), &mut id)
+        .build();
+    ID.set(id);
+    ui.table_next_column();
+    if ui.button(e("Add ID##wingmanfilterid")) {
+        filter.push(id as u16);
+    }
 }

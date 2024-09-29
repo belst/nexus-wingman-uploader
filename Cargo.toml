@@ -1,6 +1,6 @@
 [package]
 name = "log-uploader"
-version = "1.0.0"
+version = "1.0.3"
 edition = "2021"
 authors = ["belst"]
 description = "Uploads new arcdps logs to dps.report and/or wingman"
