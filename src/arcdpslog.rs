@@ -212,27 +212,7 @@ impl Log {
         // Encounter
         ui.table_next_column();
         if let Step::Done(evtc) = &self.evtc {
-            let (cm, success) = if let Step::Done(dpsreport) = &self.dpsreport {
-                let mut ret = ("", None);
-                if dpsreport.encounter.is_cm {
-                    ret.0 = " (CM)"
-                }
-                if dpsreport.encounter.success {
-                    ret.1 = Some(GREEN)
-                } else {
-                    ret.1 = Some(RED)
-                }
-
-                ret
-            } else {
-                ("", None)
-            };
-            let boss_str = format!("{}{cm}", BossId::from_header_id(evtc.header.boss_id));
-            if let Some(success) = success {
-                ui.text_colored(success, boss_str);
-            } else {
-                ui.text(boss_str);
-            }
+            self.render_title(ui, evtc);
         } else {
             ui.text(self.basename().as_str());
         }
@@ -258,16 +238,32 @@ impl Log {
         self.render_wingman(ui);
     }
 
+    fn render_title(&self, ui: &Ui, evtc: &Encounter) {
+        if let Step::Done(dpsreport) = &self.dpsreport {
+            let color = if dpsreport.encounter.success {
+                GREEN
+            } else {
+                RED
+            };
+            let cm = if dpsreport.encounter.is_cm {
+                " (CM)"
+            } else {
+                ""
+            };
+            ui.text_colored(color, format!("{}{}", dpsreport.encounter.boss, cm));
+        } else {
+            ui.text(format!("{}", BossId::from_header_id(evtc.header.boss_id)));
+        }
+    }
+
     pub fn render_hovered(&self, ui: &Ui) {
         let Step::Done(evtc) = &self.evtc else {
             return;
         };
         ui.tooltip(|| {
-            // TODO: if dpsreport upload was done, check success or failure state, and also if CM
-            // or not
-            ui.text(format!("{}", BossId::from_header_id(evtc.header.boss_id)));
+            self.render_title(ui, evtc);
             if let Some(_table) = ui.begin_table(self.location.to_string_lossy(), 3) {
-                for a in evtc.agents.iter() {
+                for a in evtc.agents.iter().filter(|a| !a.account_name.is_empty()) {
                     ui.table_next_row();
                     ui.table_next_column();
                     if let Some(tex) = get_texture(identifier_from_agent(&a)) {
