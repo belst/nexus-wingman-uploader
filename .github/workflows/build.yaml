@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CLIENT_DLL_NAME: log-uploader
+  CLIENT_DLL_NAME: log_uploader
 
 jobs:
   build-lib:
