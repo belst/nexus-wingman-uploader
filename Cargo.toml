@@ -7,7 +7,7 @@ description = "Uploads new arcdps logs to dps.report and/or wingman"
 
 [lib]
 crate-type = ["cdylib"]
-name = "log-uploader"
+name = "log_uploader"
 
 [dependencies]
 anyhow = "1.0.89"
