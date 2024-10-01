@@ -73,8 +73,7 @@ impl Log {
     fn basename(&self) -> String {
         self.location
             .parent()
-            .map(|p| p.file_name())
-            .flatten()
+            .and_then(|p| p.file_name())
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned()
@@ -225,9 +224,8 @@ impl Log {
             self.location
                 .metadata()
                 .ok()
-                .map(|m| m.modified().ok())
-                .flatten()
-                .map(|st| format_time(st))
+                .and_then(|m| m.modified().ok())
+                .map(format_time)
                 .unwrap_or_default(),
         );
         // DpsReport
@@ -266,7 +264,7 @@ impl Log {
                 for a in evtc.agents.iter().filter(|a| !a.account_name.is_empty()) {
                     ui.table_next_row();
                     ui.table_next_column();
-                    if let Some(tex) = get_texture(identifier_from_agent(&a)) {
+                    if let Some(tex) = get_texture(identifier_from_agent(a)) {
                         Image::new(tex.id(), [16.0, 16.0]).build(ui);
                     }
                     ui.table_next_column();

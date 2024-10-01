@@ -17,30 +17,33 @@ thread_local! {
     static CLIENT: ureq::Agent = ureq::agent()
 }
 pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        for (index, location, token) in inc {
-            log::info!("dpsreport for {:?}", location);
-            let res = match upload_file(location, &token) {
-                Err(e) => {
-                    log::error!("[DpsReport] Failed to upload file: {e}");
-                    Err(e.into())
-                }
-                Ok(res) => {
-                    log::info!("[DpsReport] Response: {:?}", res);
+    thread::Builder::new()
+        .name("dpsreport-thread".to_string())
+        .spawn(move || {
+            for (index, location, token) in inc {
+                log::info!("dpsreport for {:?}", location);
+                let res =
+                    match upload_file(location, &token) {
+                        Err(e) => {
+                            log::error!("[DpsReport] Failed to upload file: {e}");
+                            Err(e.into())
+                        }
+                        Ok(res) => {
+                            log::info!("[DpsReport] Response: {:?}", res);
 
-                    // Error case first since it's the more complicated one
-                    if !(200..300).contains(&res.status()) {
-                        match res.status() {
-                            403 => {
-                                let body = res.into_string().unwrap_or_default();
-                                let body = match serde_json::from_str::<
-                                    Result<DpsReportResponse, DpsReportError>,
-                                >(&body)
-                                {
-                                    Ok(json) => match json {
-                                        Ok(report) => Ok(Ok(report)), // somehow we got a valid report from an error response
-                                        Err(e) => {
-                                            if e.error.contains("EI Failure")
+                            // Error case first since it's the more complicated one
+                            if !(200..300).contains(&res.status()) {
+                                match res.status() {
+                                    403 => {
+                                        let body = res.into_string().unwrap_or_default();
+                                        match serde_json::from_str::<
+                                            Result<DpsReportResponse, DpsReportError>,
+                                        >(&body)
+                                        {
+                                            Ok(json) => match json {
+                                                Ok(report) => Ok(Ok(report)), // somehow we got a valid report from an error response
+                                                Err(e) => {
+                                                    if e.error.contains("EI Failure")
                                                 || e.error.contains(
                                                     "An identical file was uploaded recently",
                                                 )
@@ -51,34 +54,34 @@ pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHan
                                                 // Generic forbidden. we retry in 30 seconds
                                                 Ok(Err(Instant::now() + Duration::from_secs(30)))
                                             }
+                                                }
+                                            },
+                                            Err(e) => Err(anyhow::anyhow!(
+                                                "Error parsing json: {e}: {body}"
+                                            )),
                                         }
-                                    },
-                                    Err(e) => {
-                                        Err(anyhow::anyhow!("Error parsing json: {e}: {body}"))
                                     }
-                                };
-                                body
+                                    408 | 429 => Ok(Err(Instant::now() + Duration::from_secs(30))),
+                                    status if status >= 500 => {
+                                        Ok(Err(Instant::now() + Duration::from_secs(30)))
+                                    }
+                                    _ => Err(anyhow::anyhow!("Unknown error {}", res.status())),
+                                }
+                            } else {
+                                // happy path:
+                                match res.into_json() {
+                                    Ok(json) => Ok(Ok(json)),
+                                    Err(e) => Err(anyhow::anyhow!("Error parsing json: {e}")),
+                                }
                             }
-                            408 | 429 => Ok(Err(Instant::now() + Duration::from_secs(30))),
-                            status if status >= 500 => {
-                                Ok(Err(Instant::now() + Duration::from_secs(30)))
-                            }
-                            _ => Err(anyhow::anyhow!("Unknown error {}", res.status())),
                         }
-                    } else {
-                        // happy path:
-                        match res.into_json() {
-                            Ok(json) => Ok(Ok(json)),
-                            Err(e) => Err(anyhow::anyhow!("Error parsing json: {e}")),
-                        }
-                    }
+                    };
+                if let Err(e) = out.send(WorkerMessage::dpsreport(index, res)) {
+                    log::error!("[DpsReport] Failed to send dpsreport result to main thread: {e}");
                 }
-            };
-            if let Err(e) = out.send(WorkerMessage::dpsreport(index, res)) {
-                log::error!("[DpsReport] Failed to send dpsreport result to main thread: {e}");
             }
-        }
-    })
+        })
+        .expect("Could not create dpsreport thread")
 }
 
 fn upload_file(location: PathBuf, token: &str) -> Result<Response, ureq::Error> {

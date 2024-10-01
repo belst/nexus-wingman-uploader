@@ -120,14 +120,14 @@ fn validate_path(path: &str) -> bool {
 
 pub fn render(ui: &Ui) {
     thread_local! {
-        static LOGPATH: RefCell<String> = RefCell::new(String::new());
-        static PATH_VALID: Cell<bool> = Cell::new(true);
-        static PATH_EDIT: Cell<bool> = Cell::new(false);
-        static DPSREPORT_TOKEN: RefCell<String> = RefCell::new(String::new());
-        static FILTER_WINGMAN: RefCell<Vec<u16>> = RefCell::new(Vec::new());
-        static FILTER_DPSREPORT: RefCell<Vec<u16>> = RefCell::new(Vec::new());
-        static EDIT_TOKEN: Cell<bool> = Cell::new(false);
-        static INITIALIZED: Cell<bool> = Cell::new(false);
+        static LOGPATH: RefCell<String> = const { RefCell::new(String::new()) };
+        static PATH_VALID: Cell<bool> = const { Cell::new(true) };
+        static PATH_EDIT: Cell<bool> = const { Cell::new(false) };
+        static DPSREPORT_TOKEN: RefCell<String> = const { RefCell::new(String::new()) };
+        static FILTER_WINGMAN: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
+        static FILTER_DPSREPORT: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
+        static EDIT_TOKEN: Cell<bool> = const { Cell::new(false) };
+        static INITIALIZED: Cell<bool> = const { Cell::new(false) };
     }
 
     if !INITIALIZED.get() {
@@ -268,7 +268,7 @@ fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {
     ui.table_next_row();
     ui.table_next_column();
     thread_local! {
-        static ID: Cell<i32> = Cell::new(0);
+        static ID: Cell<i32> = const { Cell::new(0) };
     }
     let mut id = ID.get();
     ui.input_int(e("ID##dpsreportfilterinput"), &mut id).build();
@@ -296,7 +296,7 @@ fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
     ui.table_next_row();
     ui.table_next_column();
     thread_local! {
-        static ID: Cell<i32> = Cell::new(0);
+        static ID: Cell<i32> = const { Cell::new(0) };
     }
     let mut id = ID.get();
     ui.input_int(e("Add ID##wingmanfilterinput"), &mut id)

@@ -54,8 +54,7 @@ impl State {
             .lock()
             .unwrap()
             .as_ref()
-            .map(|rx| rx.try_recv().ok())
-            .flatten()
+            .and_then(|rx| rx.try_recv().ok())
     }
 
     fn init_producer(&self) -> Sender<common::WorkerMessage> {
@@ -84,8 +83,21 @@ impl State {
 
     fn init_filewatcher(&self, path: PathBuf) {
         // Maybe instead of the separate receiver, we can just use producer_rx
-        let (rx, watcher) =
-            filewatcher::setup_filewatcher(path).expect("Failed to setup filewatcher");
+        let (tx, rx) = std::sync::mpsc::channel();
+        // unwrap this, this can only fail, if creating the semaphore fails
+        let mut watcher = RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+        if path.exists() && path.is_dir() {
+            // panics if file doesn't exist, but we just checked. I know toctou but this should be fine
+            // also can panic on channel errors (very unlikely)
+            watcher
+                .watch(&path, notify::RecursiveMode::Recursive)
+                .unwrap();
+        } else {
+            log::warn!(
+                "Could not watch directory. {} does not exist or is not a directory",
+                path.display()
+            );
+        }
         *self.filewatcher.lock().unwrap() = Some(watcher);
         *self.file_rx.lock().unwrap() = Some(rx);
     }
@@ -123,7 +135,7 @@ static STATE: State = State {
     threads: Mutex::new(Vec::new()),
     logs: Mutex::new(Vec::new()),
 };
-const KB_IDENTIFIER: &'static str = "KB_OPEN_WINGMAN_UPLOADS";
+const KB_IDENTIFIER: &str = "KB_OPEN_WINGMAN_UPLOADS";
 
 fn config_path() -> PathBuf {
     get_addon_dir("wingman-uploader")
@@ -142,6 +154,7 @@ fn collect_urls(logs: &[arcdpslog::Log]) -> String {
 }
 
 fn load() {
+    log::info!("Loading log-uploader");
     assets::init_textures();
     // lots of locking and relocking but should be fine, since nothing is running
     let producer_tx = STATE.init_producer();
@@ -170,8 +183,10 @@ fn load() {
         },
     )
     .revert_on_unload();
+    log::info!("Loaded log-uploader");
 }
 fn unload() {
+    log::info!("Unloading log-uploader");
     let settings = Settings::get();
     log::trace!("Storing config");
     if let Err(e) = settings.store(config_path()) {
@@ -419,5 +434,5 @@ nexus::export! {
     unload,
     provider: UpdateProvider::GitHub,
     update_link: "https://github.com/belst/nexus-wingman-uploader",
-    log_filter: "ureq=warn,ureq_multipart=warn"
+    log_filter: "warn,log_uploader=debug"
 }

@@ -14,7 +14,6 @@ use crate::common::WorkerMessage;
 pub type EvtcJob = (usize, PathBuf);
 
 pub fn run(inc: Receiver<EvtcJob>, out: Sender<WorkerMessage>) -> thread::JoinHandle<()> {
-    log::trace!("[EVTC] Starting worker thread");
     thread::Builder::new()
         .name("uploader-evtc".to_string())
         .spawn(move || loop {

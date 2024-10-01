@@ -5,20 +5,8 @@ use std::{
 
 use notify::{
     event::{ModifyKind, RenameMode},
-    Error, ErrorKind, Event, EventKind, RecommendedWatcher, Watcher,
+    Error, ErrorKind, Event, EventKind,
 };
-
-pub fn setup_filewatcher(
-    path: impl AsRef<std::path::Path>,
-) -> Result<(Receiver<Result<Event, Error>>, RecommendedWatcher), Error> {
-    let path = path.as_ref();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let mut watcher = RecommendedWatcher::new(tx, notify::Config::default())?;
-
-    watcher.watch(&path, notify::RecursiveMode::Recursive)?;
-
-    Ok((rx, watcher))
-}
 
 pub trait ReceiverExt {
     fn next_log(&self) -> Result<Box<dyn Iterator<Item = PathBuf>>, Error>;

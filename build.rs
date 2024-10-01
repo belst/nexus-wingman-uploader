@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         writeln!(
             &mut assets,
-            r##"pub const {const_name}: &'static str = "{identifier}";"##,
+            r##"pub const {const_name}: &str = "{identifier}";"##,
         )?;
         writeln!(
             &mut texture_import_calls,
