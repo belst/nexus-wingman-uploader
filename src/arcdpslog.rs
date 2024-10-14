@@ -90,7 +90,8 @@ impl Log {
         // TODO errorhandling
         match &self.dpsreport {
             Step::Done(dpsreport) => {
-                let push_id = ui.push_id((self.basename() + "btn_dpsreport").as_str());
+                let push_id =
+                    ui.push_id(format!("{}btn_dpsreport", self.location.display()).as_str());
                 if ImageButton::new(tex.id(), [16.0, 16.0])
                     .frame_padding(0)
                     .build(ui)

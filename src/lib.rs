@@ -394,7 +394,7 @@ fn render_fn(ui: &Ui) {
 
     let show_window = Settings::get().show_window();
     if show_window {
-        Window::new(e("Wingman Uploader"))
+        Window::new(e("Log Uploader"))
             .opened(&mut Settings::get_mut().show_window)
             .collapsible(false)
             .build(ui, || {
@@ -428,6 +428,7 @@ fn render_options(ui: &Ui) {
 }
 
 nexus::export! {
+    name: "Log Uploader",
     signature: -69421,
     flags: AddonFlags::None,
     load,

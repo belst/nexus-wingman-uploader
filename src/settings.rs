@@ -274,7 +274,7 @@ fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {
     ui.input_int(e("ID##dpsreportfilterinput"), &mut id).build();
     ID.set(id);
     ui.table_next_column();
-    if ui.button(e("Add ID##dpsreportfilterid")) {
+    if ui.button(e("Add##dpsreportfilterid")) {
         filter.push(id as u16);
     }
 }
@@ -299,11 +299,10 @@ fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
         static ID: Cell<i32> = const { Cell::new(0) };
     }
     let mut id = ID.get();
-    ui.input_int(e("Add ID##wingmanfilterinput"), &mut id)
-        .build();
+    ui.input_int(e("ID##wingmanfilterinput"), &mut id).build();
     ID.set(id);
     ui.table_next_column();
-    if ui.button(e("Add ID##wingmanfilterid")) {
+    if ui.button(e("Add##wingmanfilterid")) {
         filter.push(id as u16);
     }
 }
