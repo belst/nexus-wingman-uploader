@@ -16,6 +16,29 @@ pub type DpsJob = (usize, PathBuf, String);
 thread_local! {
     static CLIENT: ureq::Agent = ureq::agent()
 }
+
+fn check_json(body: &str) -> Result<Result<DpsReportResponse, Instant>, anyhow::Error> {
+    match serde_json::from_str::<Result<DpsReportResponse, DpsReportError>>(&body) {
+        Ok(json) => {
+            match json {
+                Ok(report) => Ok(Ok(report)), // somehow we got a valid report from an error response
+                Err(e) => {
+                    if e.error.contains("EI Failure")
+                        || e.error.contains("An identical file was uploaded recently")
+                        || e.error.contains("Encounter is too short")
+                    {
+                        Err(anyhow::anyhow!("Error 403: {}", e.error))
+                    } else {
+                        // Generic forbidden. we retry in 30 seconds
+                        Ok(Err(Instant::now() + Duration::from_secs(30)))
+                    }
+                }
+            }
+        }
+        Err(e) => Err(anyhow::anyhow!("Error parsing json: {e}: {body}")),
+    }
+}
+
 pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHandle<()> {
     thread::Builder::new()
         .name("dpsreport-thread".to_string())
@@ -23,9 +46,21 @@ pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHan
             for (index, location, token) in inc {
                 log::info!("dpsreport for {:?}", location);
                 let res = match upload_file(location, &token) {
+                    Err(ureq::Error::Status(status, res)) => match status {
+                        408 | 429 => Ok(Err(Instant::now() + Duration::from_secs(30))),
+                        status if status >= 500 => {
+                            Ok(Err(Instant::now() + Duration::from_secs(30)))
+                        }
+                        403 => {
+                            let body = res.into_string().unwrap_or_default();
+                            check_json(&body)
+                        }
+                        _ => Err(anyhow::anyhow!("Unknown error {}", res.status())),
+                    },
                     Err(e) => {
-                        log::error!("[DpsReport] Failed to upload file: {e}");
-                        Err(e.into())
+                        let msg = format!("Failed to upload file: {e}").replace(&token, "******");
+                        log::error!("[DpsReport] {msg}");
+                        Err(anyhow::anyhow!(msg))
                     }
                     Ok(res) => {
                         log::info!(
@@ -33,50 +68,14 @@ pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHan
                             format!("{res:?}").replace(&token, "******")
                         );
 
-                        // Error case first since it's the more complicated one
-                        if !(200..300).contains(&res.status()) {
-                            match res.status() {
-                                403 => {
-                                    let body = res.into_string().unwrap_or_default();
-                                    match serde_json::from_str::<
-                                        Result<DpsReportResponse, DpsReportError>,
-                                    >(&body)
-                                    {
-                                        Ok(json) => {
-                                            match json {
-                                                Ok(report) => Ok(Ok(report)), // somehow we got a valid report from an error response
-                                                Err(e) => {
-                                                    if e.error.contains("EI Failure")
-                                                || e.error.contains(
-                                                    "An identical file was uploaded recently",
-                                                )
-                                                || e.error.contains("Encounter is too short")
-                                            {
-                                                Err(anyhow::anyhow!("Error 403: {}", e.error))
-                                            } else {
-                                                // Generic forbidden. we retry in 30 seconds
-                                                Ok(Err(Instant::now() + Duration::from_secs(30)))
-                                            }
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            Err(anyhow::anyhow!("Error parsing json: {e}: {body}"))
-                                        }
-                                    }
-                                }
-                                408 | 429 => Ok(Err(Instant::now() + Duration::from_secs(30))),
-                                status if status >= 500 => {
-                                    Ok(Err(Instant::now() + Duration::from_secs(30)))
-                                }
-                                _ => Err(anyhow::anyhow!("Unknown error {}", res.status())),
-                            }
-                        } else {
+                        if (200..300).contains(&res.status()) {
                             let body = res.into_string().unwrap_or_default();
                             match serde_json::from_str::<DpsReportResponse>(&body) {
                                 Ok(json) => Ok(Ok(json)),
                                 Err(e) => Err(anyhow::anyhow!("Error parsing json: {e}: {body}")),
                             }
+                        } else {
+                            Err(anyhow::anyhow!("Unknown Response Code: {}", res.status()))
                         }
                     }
                 };
