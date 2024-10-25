@@ -143,10 +143,13 @@ fn config_path() -> PathBuf {
         .join("settings.json")
 }
 
-fn collect_urls(logs: &[arcdpslog::Log]) -> String {
+fn collect_urls(logs: &[arcdpslog::Log], only_success: bool) -> String {
     let mut urls = vec![];
     for l in logs {
         if let Step::Done(ref dpsreport) = l.dpsreport {
+            if only_success && !dpsreport.encounter.success {
+                continue
+            }
             urls.push(dpsreport.permalink.as_str());
         }
     }
@@ -408,7 +411,13 @@ fn render_fn(ui: &Ui) {
                     }
                 });
                 if ui.button(e("Copy dps.report urls")) {
-                    let urls = collect_urls(&logs);
+                    let urls = collect_urls(&logs, false);
+                    if !urls.is_empty() {
+                        ui.set_clipboard_text(urls);
+                    }
+                }
+                if ui.button(e("Copy dps.report urls (success)")) {
+                    let urls = collect_urls(&logs, true);
                     if !urls.is_empty() {
                         ui.set_clipboard_text(urls);
                     }
