@@ -18,11 +18,17 @@ fn default_true() -> bool {
     true
 }
 
+fn default_copyformat() -> String {
+    String::from("@1")
+}
+
 // serde defaults only for the case, the file exists, but doesnt contain all the fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub logpath: String,
     pub dpsreport_token: String,
+    #[serde(default = "default_copyformat")]
+    pub dpsreport_copyformat: String,
     #[serde(default)]
     pub show_window: bool,
     #[serde(default = "default_true")]
@@ -40,6 +46,7 @@ impl Settings {
         Self {
             logpath: String::new(),
             dpsreport_token: String::new(),
+            dpsreport_copyformat: String::new(),
             show_window: true,
             enable_dpsreport: true,
             enable_wingman: true,
@@ -66,6 +73,10 @@ impl Settings {
 
     pub fn dpsreport_token(&self) -> &str {
         &self.dpsreport_token
+    }
+
+    pub fn dpsreport_copyformat(&self) -> &str {
+        &self.dpsreport_copyformat
     }
 
     pub fn show_window(&self) -> bool {
@@ -124,9 +135,11 @@ pub fn render(ui: &Ui) {
         static PATH_VALID: Cell<bool> = const { Cell::new(true) };
         static PATH_EDIT: Cell<bool> = const { Cell::new(false) };
         static DPSREPORT_TOKEN: RefCell<String> = const { RefCell::new(String::new()) };
+        static DPSREPORT_COPYFORMAT: RefCell<String> = const { RefCell::new(String::new()) };
         static FILTER_WINGMAN: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
         static FILTER_DPSREPORT: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
         static EDIT_TOKEN: Cell<bool> = const { Cell::new(false) };
+        static EDIT_COPYFORMAT: Cell<bool> = const { Cell::new(false) };
         static INITIALIZED: Cell<bool> = const { Cell::new(false) };
     }
 
@@ -134,6 +147,7 @@ pub fn render(ui: &Ui) {
         let settings = SETTINGS.lock().unwrap();
         LOGPATH.set(settings.logpath.clone());
         DPSREPORT_TOKEN.set(settings.dpsreport_token.clone());
+        DPSREPORT_COPYFORMAT.set(settings.dpsreport_copyformat.clone());
         FILTER_WINGMAN.set(settings.filter_wingman.clone());
         FILTER_DPSREPORT.set(settings.filter_dpsreport.clone());
         INITIALIZED.set(true);
@@ -210,6 +224,34 @@ pub fn render(ui: &Ui) {
         }
         EDIT_TOKEN.set(!EDIT_TOKEN.get())
     }
+    
+    DPSREPORT_COPYFORMAT.with_borrow_mut(|copyformat| {
+        if !EDIT_COPYFORMAT.get() && copyformat.as_str() != settings.dpsreport_copyformat.as_str() {
+            // we are not editing but token changed
+            // can only happen if dps report response was successful
+            // Update local input token
+            *copyformat = settings.dpsreport_copyformat.clone();
+        }
+        ui.input_text(e("dps.report copy format"), copyformat)
+            .read_only(!EDIT_COPYFORMAT.get())
+            .build();
+    });
+    ui.same_line();
+    if ui.button(if !EDIT_COPYFORMAT.get() {
+        e("Edit") + "##editcopyformat"
+    } else {
+        e("Set") + "##setcopyformat"
+    }) {
+        // button got clicked, check current state and toggle it
+        if EDIT_COPYFORMAT.get() {
+            // Set button was clicked
+            DPSREPORT_COPYFORMAT.with_borrow(|copyformat| {
+                settings.dpsreport_copyformat = copyformat.clone();
+            });
+        }
+        EDIT_COPYFORMAT.set(!EDIT_COPYFORMAT.get())
+    }
+
     ui.separator();
     ui.checkbox(e("Enable dps.report"), &mut settings.enable_dpsreport);
     ui.text("Don't upload logs to dps.report with the following boss ids:");

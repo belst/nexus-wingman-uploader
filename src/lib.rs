@@ -143,17 +143,44 @@ fn config_path() -> PathBuf {
         .join("settings.json")
 }
 
+#[no_mangle]
 fn collect_urls(logs: &[arcdpslog::Log], only_success: bool) -> String {
     let mut urls = vec![];
+    log::info!("Before getting Setting log-uploader");
+    let format_template = Settings::get().dpsreport_copyformat.clone();
     for l in logs {
         if let Step::Done(ref dpsreport) = l.dpsreport {
             if only_success && !dpsreport.encounter.success {
                 continue
             }
-            urls.push(dpsreport.permalink.as_str());
+            urls.push(format_url(dpsreport, &format_template));
         }
     }
     urls.join("\r\n")
+}
+
+fn format_url(dpsreport: &dpsreport::DpsReportResponse, format_template: &str) -> String {
+    /*
+        @1 - dpsreport.permalink
+        @2 - format!("{}{}", dpsreport.encounter.boss, cm)
+        @3 - dpsreport.encounter.boss_id
+        @4 - dpsreport.encounter.success
+    */
+    log::info!("copy format template: {}", format_template);
+    let success = match dpsreport.encounter.success { 
+        true => "Success",
+        false => "Fail"
+    };
+    let cm = match dpsreport.encounter.is_cm {
+        true => " (CM)",
+        false => ""
+    };
+
+    return format_template
+            .replace("@1", dpsreport.permalink.as_str())
+            .replace("@2", format!("{}{}", dpsreport.encounter.boss, cm).as_str())
+            .replace("@3", &dpsreport.encounter.boss_id.to_string())
+            .replace("@4", &success);
 }
 
 fn load() {
