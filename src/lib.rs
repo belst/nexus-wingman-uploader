@@ -143,14 +143,12 @@ fn config_path() -> PathBuf {
         .join("settings.json")
 }
 
-#[no_mangle]
-fn collect_urls(logs: &[arcdpslog::Log], only_success: bool) -> String {
+fn collect_urls(logs: &[arcdpslog::Log], use_formatting: bool, settings: &Settings) -> String {
     let mut urls = vec![];
-    log::info!("Before getting Setting log-uploader");
-    let format_template = Settings::get().dpsreport_copyformat.clone();
+    let format_template = if use_formatting { &settings.dpsreport_copyformat } else { "@1" };
     for l in logs {
         if let Step::Done(ref dpsreport) = l.dpsreport {
-            if only_success && !dpsreport.encounter.success {
+            if settings.copy_success && !dpsreport.encounter.success {
                 continue
             }
             urls.push(format_url(dpsreport, &format_template));
@@ -422,10 +420,11 @@ fn render_fn(ui: &Ui) {
     advance_logs(&mut logs);
     update_logs(&mut logs);
 
-    let show_window = Settings::get().show_window();
+    let mut settings = Settings::get_mut();
+    let mut show_window = settings.show_window();
     if show_window {
         Window::new(e("Log Uploader"))
-            .opened(&mut Settings::get_mut().show_window)
+            .opened(&mut show_window)
             .collapsible(false)
             .build(ui, || {
                 if logs.is_empty() {
@@ -437,19 +436,21 @@ fn render_fn(ui: &Ui) {
                         l.render_row(ui);
                     }
                 });
+                ui.checkbox("Only copy clears", &mut settings.copy_success);
                 if ui.button(e("Copy dps.report urls")) {
-                    let urls = collect_urls(&logs, false);
+                    let urls = collect_urls(&logs, false, &settings);
                     if !urls.is_empty() {
                         ui.set_clipboard_text(urls);
                     }
                 }
-                if ui.button(e("Copy dps.report urls (success)")) {
-                    let urls = collect_urls(&logs, true);
+                if ui.button(e("Copy formatted dps.report urls")) {
+                    let urls = collect_urls(&logs, true, &settings);
                     if !urls.is_empty() {
                         ui.set_clipboard_text(urls);
                     }
                 }
             });
+            settings.show_window = show_window;
     }
 }
 
