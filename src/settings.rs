@@ -85,7 +85,7 @@ impl Settings {
     pub fn show_window(&self) -> bool {
         self.show_window
     }
-    
+
     pub fn copy_success(&self) -> bool {
         self.copy_success
     }
@@ -231,14 +231,8 @@ pub fn render(ui: &Ui) {
         }
         EDIT_TOKEN.set(!EDIT_TOKEN.get())
     }
-    
+
     DPSREPORT_COPYFORMAT.with_borrow_mut(|copyformat| {
-        if !EDIT_COPYFORMAT.get() && copyformat.as_str() != settings.dpsreport_copyformat.as_str() {
-            // we are not editing but token changed
-            // can only happen if dps report response was successful
-            // Update local input token
-            *copyformat = settings.dpsreport_copyformat.clone();
-        }
         ui.input_text(e("dps.report copy format"), copyformat)
             .read_only(!EDIT_COPYFORMAT.get())
             .build();

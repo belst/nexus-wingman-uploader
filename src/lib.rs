@@ -143,15 +143,14 @@ fn config_path() -> PathBuf {
         .join("settings.json")
 }
 
-fn collect_urls(logs: &[arcdpslog::Log], use_formatting: bool, settings: &Settings) -> String {
+fn collect_urls(logs: &[arcdpslog::Log], settings: &Settings) -> String {
     let mut urls = vec![];
-    let format_template = if use_formatting { &settings.dpsreport_copyformat } else { "@1" };
     for l in logs {
         if let Step::Done(ref dpsreport) = l.dpsreport {
             if settings.copy_success && !dpsreport.encounter.success {
-                continue
+                continue;
             }
-            urls.push(format_url(dpsreport, &format_template));
+            urls.push(format_url(dpsreport, &settings.dpsreport_copyformat));
         }
     }
     urls.join("\r\n")
@@ -165,20 +164,20 @@ fn format_url(dpsreport: &dpsreport::DpsReportResponse, format_template: &str) -
         @4 - dpsreport.encounter.success
     */
     log::info!("copy format template: {}", format_template);
-    let success = match dpsreport.encounter.success { 
+    let success = match dpsreport.encounter.success {
         true => "Success",
-        false => "Fail"
+        false => "Fail",
     };
     let cm = match dpsreport.encounter.is_cm {
         true => " (CM)",
-        false => ""
+        false => "",
     };
 
     return format_template
-            .replace("@1", dpsreport.permalink.as_str())
-            .replace("@2", format!("{}{}", dpsreport.encounter.boss, cm).as_str())
-            .replace("@3", &dpsreport.encounter.boss_id.to_string())
-            .replace("@4", &success);
+        .replace("@1", dpsreport.permalink.as_str())
+        .replace("@2", format!("{}{}", dpsreport.encounter.boss, cm).as_str())
+        .replace("@3", &dpsreport.encounter.boss_id.to_string())
+        .replace("@4", &success);
 }
 
 fn load() {
@@ -421,36 +420,29 @@ fn render_fn(ui: &Ui) {
     update_logs(&mut logs);
 
     let mut settings = Settings::get_mut();
-    let mut show_window = settings.show_window();
-    if show_window {
-        Window::new(e("Log Uploader"))
-            .opened(&mut show_window)
+    if settings.show_window {
+        if let Some(_w) = Window::new(e("Log Uploader"))
+            .opened(&mut settings.show_window)
             .collapsible(false)
-            .build(ui, || {
-                if logs.is_empty() {
-                    ui.text(e("No logs yet."));
-                    return;
-                }
-                setup_table(ui, || {
-                    for l in logs.iter() {
-                        l.render_row(ui);
-                    }
-                });
-                ui.checkbox("Only copy clears", &mut settings.copy_success);
-                if ui.button(e("Copy dps.report urls")) {
-                    let urls = collect_urls(&logs, false, &settings);
-                    if !urls.is_empty() {
-                        ui.set_clipboard_text(urls);
-                    }
-                }
-                if ui.button(e("Copy formatted dps.report urls")) {
-                    let urls = collect_urls(&logs, true, &settings);
-                    if !urls.is_empty() {
-                        ui.set_clipboard_text(urls);
-                    }
+            .begin(ui)
+        {
+            if logs.is_empty() {
+                ui.text(e("No logs yet."));
+                return;
+            }
+            setup_table(ui, || {
+                for l in logs.iter() {
+                    l.render_row(ui);
                 }
             });
-            settings.show_window = show_window;
+            ui.checkbox("Only copy clears", &mut settings.copy_success);
+            if ui.button(e("Copy dps.report urls")) {
+                let urls = collect_urls(&logs, &settings);
+                if !urls.is_empty() {
+                    ui.set_clipboard_text(urls);
+                }
+            }
+        }
     }
 }
 
