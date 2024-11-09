@@ -242,6 +242,17 @@ pub fn render(ui: &Ui) {
         ui.input_text(e("dps.report copy format"), copyformat)
             .read_only(!EDIT_COPYFORMAT.get())
             .build();
+        ui.help_marker(|| {
+            ui.tooltip(|| {
+                ui.text(
+                    "You can configure the format that your dps.report url strings are copied as using the following parameters:",
+                );
+                ui.text("@1 - dps.report url");
+                ui.text("@2 - boss name and CM status");
+                ui.text("@3 - boss id");
+                ui.text("@4 - encounter success/fail");
+            })
+        });
     });
     ui.same_line();
     if ui.button(if !EDIT_COPYFORMAT.get() {
