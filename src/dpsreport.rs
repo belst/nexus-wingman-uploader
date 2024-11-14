@@ -124,7 +124,21 @@ pub struct Encounter {
     pub boss_id: i64,
     pub success: bool,
     pub boss: String,
-    pub is_cm: bool,
+    pub is_cm: Option<bool>,
+    pub is_legendary_cm: Option<bool>,
+    pub emboldened: Option<bool>,
+}
+
+impl Encounter {
+    pub fn format_mode(&self) -> Option<&'static str> {
+        match (self.emboldened, self.is_cm, self.is_legendary_cm) {
+            (_, _, Some(true)) => Some("LCM"),
+            (_, Some(true), _) => Some("CM"),
+            (Some(true), _, _) => Some("Emboldened"),
+            (Some(false), Some(false), Some(false)) => Some(""),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]

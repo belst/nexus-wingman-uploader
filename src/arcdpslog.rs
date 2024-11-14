@@ -18,6 +18,7 @@ use crate::common::RED;
 use crate::dpsreport::DpsReportResponse;
 use crate::evtc::identifier_from_agent;
 use crate::util::e;
+use crate::util::UiExt;
 
 // Maybe this needs a retry option for retryable errors
 #[derive(Debug)]
@@ -244,12 +245,17 @@ impl Log {
             } else {
                 RED
             };
-            let cm = if dpsreport.encounter.is_cm {
-                " (CM)"
+            if let Some(mode) = dpsreport.encounter.format_mode() {
+                if mode == "" {
+                    ui.text_colored(color, format!("{}", dpsreport.encounter.boss));
+                } else {
+                    ui.text_colored(color, format!("{} ({})", dpsreport.encounter.boss, mode));
+                }
             } else {
-                ""
-            };
-            ui.text_colored(color, format!("{}{}", dpsreport.encounter.boss, cm));
+                ui.text_colored(color, &dpsreport.encounter.boss);
+                ui.same_line();
+                ui.help_marker(|| ui.text("Could not determine CM/LCM/NM mode"));
+            }
         } else {
             ui.text(format!("{}", BossId::from_header_id(evtc.header.boss_id)));
         }
