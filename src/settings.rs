@@ -41,6 +41,8 @@ pub struct Settings {
     pub filter_dpsreport: Vec<u16>,
     #[serde(default)]
     pub filter_wingman: Vec<u16>,
+    #[serde(default)]
+    pub hide_hotfix_notification_20241114: bool,
 }
 
 impl Settings {
@@ -55,6 +57,7 @@ impl Settings {
             enable_wingman: true,
             filter_wingman: Vec::new(),
             filter_dpsreport: Vec::new(),
+            hide_hotfix_notification_20241114: false,
         }
     }
 
@@ -65,37 +68,25 @@ impl Settings {
         SETTINGS.lock().unwrap()
     }
 
-    fn default_dir() -> PathBuf {
+    pub fn default_dir() -> PathBuf {
         let mut base = document_dir().unwrap_or_default();
         base.push("Guild Wars 2");
         base.push("addons");
         base.push("arcdps");
-        base.push("arcdps.cbtlog");
+        base.push("arcdps.cbtlogs");
         base
     }
 
-    pub fn dpsreport_token(&self) -> &str {
-        &self.dpsreport_token
+    pub fn check_hotfix20241114(&self) -> bool {
+        self.logpath.ends_with("arcdps.cbtlog")
     }
 
-    pub fn dpsreport_copyformat(&self) -> &str {
-        &self.dpsreport_copyformat
-    }
-
-    pub fn show_window(&self) -> bool {
-        self.show_window
-    }
-
-    pub fn copy_success(&self) -> bool {
-        self.copy_success
+    pub fn fix_hotfix20241114(&mut self) {
+        self.logpath = Settings::default_dir().to_string_lossy().to_string();
     }
 
     pub fn enable_dpsreport(&self) -> bool {
         self.enable_dpsreport
-    }
-
-    pub fn enable_wingman(&self) -> bool {
-        self.enable_wingman
     }
 
     pub fn logpath(&self) -> &str {

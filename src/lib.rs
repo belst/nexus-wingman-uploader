@@ -415,6 +415,33 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
     }
 }
 
+// Notification window for misspelled logpath (hotfix 20241114)
+fn render_hotfix20241114(ui: &Ui, settings: &mut Settings) {
+    if settings.check_hotfix20241114() && !settings.hide_hotfix_notification_20241114 {
+        if let Some(_w) = Window::new(e("Arcdps Path Fix"))
+            .collapsible(false)
+            .begin(ui)
+        {
+            ui.text(format!(
+                r#"Unfortunately there was a typo in the default logpath last version.
+You seem to have the wrong logpath ({}) configured.
+Do you want to set it to the default logpath ({})?
+You can also hide this message permanently if the configured path is correct."#,
+                settings.logpath,
+                Settings::default_dir().display()
+            ));
+            if ui.button(e("Reset logpath to default")) {
+                STATE.unwatch(&settings.logpath);
+                settings.fix_hotfix20241114();
+                STATE.watch(&settings.logpath);
+            }
+            if ui.button(e("Don't show this window again")) {
+                settings.hide_hotfix_notification_20241114 = true;
+            }
+        }
+    }
+}
+
 fn render_fn(ui: &Ui) {
     let mut logs = STATE.logs.lock().unwrap();
     get_new_logs(&mut logs);
@@ -422,6 +449,7 @@ fn render_fn(ui: &Ui) {
     update_logs(&mut logs);
 
     let mut settings = Settings::get_mut();
+    render_hotfix20241114(ui, &mut settings);
     if settings.show_window {
         if let Some(_w) = Window::new(e("Log Uploader"))
             .opened(&mut settings.show_window)
