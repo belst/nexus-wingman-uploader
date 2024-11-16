@@ -168,7 +168,10 @@ fn format_url(dpsreport: &dpsreport::DpsReportResponse, format_template: &str) -
         true => "Success",
         false => "Fail",
     };
-    let mode = dpsreport.encounter.format_mode().unwrap_or("Unknown");
+    let mode = dpsreport
+        .encounter
+        .format_mode()
+        .unwrap_or_else(|| "Unknown".to_string());
     let cm = if mode == "" {
         "".to_string()
     } else {
