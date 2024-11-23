@@ -13,7 +13,7 @@ use common::*;
 use filewatcher::ReceiverExt;
 use nexus::{
     gui::{register_render, RenderType},
-    imgui::{TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window},
+    imgui::{ChildWindow, TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window},
     keybind::{register_keybind_with_struct, Keybind},
     keybind_handler,
     paths::get_addon_dir,
@@ -147,10 +147,11 @@ fn collect_urls(logs: &[arcdpslog::Log], settings: &Settings) -> String {
     let mut urls = vec![];
     for l in logs {
         if let Step::Done(ref dpsreport) = l.dpsreport {
-            if settings.copy_success && !dpsreport.encounter.success {
-                continue;
+            match (dpsreport.encounter.success, settings.copy_success, settings.copy_failure) {
+                (true, false, _) => continue,
+                (false, _, false) => continue,
+                _ => urls.push(format_url(dpsreport, &settings.dpsreport_copyformat))
             }
-            urls.push(format_url(dpsreport, &settings.dpsreport_copyformat));
         }
     }
     urls.join("\r\n")
@@ -158,12 +159,11 @@ fn collect_urls(logs: &[arcdpslog::Log], settings: &Settings) -> String {
 
 fn format_url(dpsreport: &dpsreport::DpsReportResponse, format_template: &str) -> String {
     /*
-        @1 - dpsreport.permalink
-        @2 - format!("{}{}", dpsreport.encounter.boss, cm)
-        @3 - dpsreport.encounter.boss_id
-        @4 - dpsreport.encounter.success
+        @1 - permalink
+        @2 - boss name & mode
+        @3 - boss id
+        @4 - encounter success/fail
     */
-    log::info!("copy format template: {}", format_template);
     let success = match dpsreport.encounter.success {
         true => "Success",
         false => "Fail",
@@ -179,8 +179,8 @@ fn format_url(dpsreport: &dpsreport::DpsReportResponse, format_template: &str) -
     };
 
     return format_template
-        .replace("@1", dpsreport.permalink.as_str())
-        .replace("@2", format!("{}{}", dpsreport.encounter.boss, cm).as_str())
+        .replace("@1", &dpsreport.permalink)
+        .replace("@2", &format!("{}{}", dpsreport.encounter.boss, cm))
         .replace("@3", &dpsreport.encounter.boss_id.to_string())
         .replace("@4", &success);
 }
@@ -377,7 +377,7 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
     let flags =
         TableFlags::BORDERS_OUTER | TableFlags::BORDERS_INNER_V | TableFlags::NO_PAD_INNER_X;
 
-    let max_time_width = ui.calc_text_size("00:00:00")[0];
+    let max_time_width = ui.calc_text_size("00:00 (Thu Nov 14)")[0];
     let max_path_width = ui.calc_text_size("Kanaxai, Scythe of House Aurkus (25577)")[0];
 
     let t = ui.begin_table_header_with_flags(
@@ -459,22 +459,35 @@ fn render_fn(ui: &Ui) {
             .collapsible(false)
             .begin(ui)
         {
-            if logs.is_empty() {
-                ui.text(e("No logs yet."));
-                return;
-            }
-            setup_table(ui, || {
-                for l in logs.iter() {
-                    l.render_row(ui);
-                }
-            });
-            ui.checkbox("Only copy clears", &mut settings.copy_success);
+            ChildWindow::new("Log Table")
+                .size([0.0, -ui.frame_height_with_spacing()*2.0])
+                .always_auto_resize(true)
+                .build(ui, || {
+                    if logs.is_empty() {
+                        ui.text(e("No logs yet."));
+                        return;
+                    }
+                    setup_table(ui, || {
+                        for l in logs.iter().rev() {
+                            l.render_row(ui);
+                        }
+                    });    
+                });
+
+            let controls = ui.begin_group();
+            ui.text(e("Include:"));
+            ui.same_line();
+            ui.checkbox("Success", &mut settings.copy_success);
+            ui.same_line();
+            ui.checkbox("Failure", &mut settings.copy_failure);
+            
             if ui.button(e("Copy dps.report urls")) {
                 let urls = collect_urls(&logs, &settings);
                 if !urls.is_empty() {
                     ui.set_clipboard_text(urls);
                 }
             }
+            controls.end();
         }
     }
 }

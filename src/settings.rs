@@ -31,8 +31,10 @@ pub struct Settings {
     pub dpsreport_copyformat: String,
     #[serde(default)]
     pub show_window: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub copy_success: bool,
+    #[serde(default = "default_true")]
+    pub copy_failure: bool,
     #[serde(default = "default_true")]
     pub enable_dpsreport: bool,
     #[serde(default = "default_true")]
@@ -52,7 +54,8 @@ impl Settings {
             dpsreport_token: String::new(),
             dpsreport_copyformat: String::new(),
             show_window: true,
-            copy_success: false,
+            copy_success: true,
+            copy_failure: true,
             enable_dpsreport: true,
             enable_wingman: true,
             filter_wingman: Vec::new(),
