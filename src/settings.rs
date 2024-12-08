@@ -32,7 +32,11 @@ pub struct Settings {
     #[serde(default)]
     pub show_window: bool,
     #[serde(default)]
+    pub rev_log_order: bool,
+    #[serde(default = "default_true")]
     pub copy_success: bool,
+    #[serde(default = "default_true")]
+    pub copy_failure: bool,
     #[serde(default = "default_true")]
     pub enable_dpsreport: bool,
     #[serde(default = "default_true")]
@@ -52,7 +56,9 @@ impl Settings {
             dpsreport_token: String::new(),
             dpsreport_copyformat: String::new(),
             show_window: true,
-            copy_success: false,
+            rev_log_order: false,
+            copy_success: true,
+            copy_failure: true,
             enable_dpsreport: true,
             enable_wingman: true,
             filter_wingman: Vec::new(),
@@ -254,6 +260,7 @@ pub fn render(ui: &Ui) {
         }
         EDIT_COPYFORMAT.set(!EDIT_COPYFORMAT.get())
     }
+    ui.checkbox(e("Display new logs at top"), &mut settings.rev_log_order);
 
     ui.separator();
     ui.checkbox(e("Enable dps.report"), &mut settings.enable_dpsreport);
