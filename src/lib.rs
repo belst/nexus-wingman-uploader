@@ -468,8 +468,14 @@ fn render_fn(ui: &Ui) {
                         return;
                     }
                     setup_table(ui, || {
-                        for l in logs.iter().rev() {
-                            l.render_row(ui);
+                        if settings.rev_log_order {
+                            for l in logs.iter().rev() {
+                                l.render_row(ui);
+                            }
+                        } else {
+                            for l in logs.iter() {
+                                l.render_row(ui);
+                            }
                         }
                     });    
                 });

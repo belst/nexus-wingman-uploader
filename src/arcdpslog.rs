@@ -50,7 +50,7 @@ pub struct Log {
 
 fn format_time(time: SystemTime) -> String {
     let dt = DateTime::<Local>::from(time);
-    format!("{}", dt.format("%R (%a %b %_d)"))
+    format!("{}", dt.format("%R"))
 }
 
 const PULSE_SPEED: f32 = 5.0;
