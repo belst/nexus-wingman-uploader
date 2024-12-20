@@ -5,7 +5,7 @@ use std::{
         Mutex,
     },
     thread::{self},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use arcdpslog::Step;
@@ -19,7 +19,7 @@ use nexus::{
     paths::get_addon_dir,
     render, AddonFlags, UpdateProvider,
 };
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use settings::Settings;
 use util::e;
 
@@ -39,7 +39,7 @@ mod wingman;
 struct State {
     producer_rx: Mutex<Option<Receiver<common::WorkerMessage>>>,
     evtc_worker: Mutex<Option<Sender<evtc::EvtcJob>>>,
-    filewatcher: Mutex<Option<RecommendedWatcher>>,
+    filewatcher: Mutex<Option<Box<dyn Watcher + Send>>>,
     file_rx: Mutex<Option<Receiver<Result<Event, notify::Error>>>>,
     dps_worker: Mutex<Option<Sender<dpsreport::DpsJob>>>,
     wingman_worker: Mutex<Option<Sender<wingman::WingmanJob>>>,
@@ -85,7 +85,18 @@ impl State {
         // Maybe instead of the separate receiver, we can just use producer_rx
         let (tx, rx) = std::sync::mpsc::channel();
         // unwrap this, this can only fail, if creating the semaphore fails
-        let mut watcher = RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+        // ReadDirectoryChangesWatcher is really inconsistent on wine, fall back to PollWatcher
+        let mut watcher: Box<dyn Watcher + Send> = if winecheck::is_wine() {
+            Box::new(
+                PollWatcher::new(
+                    tx,
+                    notify::Config::default().with_poll_interval(Duration::from_secs(5)),
+                )
+                .unwrap(),
+            )
+        } else {
+            Box::new(RecommendedWatcher::new(tx, notify::Config::default()).unwrap())
+        };
         if path.exists() && path.is_dir() {
             // panics if file doesn't exist, but we just checked. I know toctou but this should be fine
             // also can panic on channel errors (very unlikely)
@@ -147,10 +158,14 @@ fn collect_urls(logs: &[arcdpslog::Log], settings: &Settings) -> String {
     let mut urls = vec![];
     for l in logs {
         if let Step::Done(ref dpsreport) = l.dpsreport {
-            match (dpsreport.encounter.success, settings.copy_success, settings.copy_failure) {
+            match (
+                dpsreport.encounter.success,
+                settings.copy_success,
+                settings.copy_failure,
+            ) {
                 (true, false, _) => continue,
                 (false, _, false) => continue,
-                _ => urls.push(format_url(dpsreport, &settings.dpsreport_copyformat))
+                _ => urls.push(format_url(dpsreport, &settings.dpsreport_copyformat)),
             }
         }
     }
@@ -460,7 +475,7 @@ fn render_fn(ui: &Ui) {
             .begin(ui)
         {
             ChildWindow::new("Log Table")
-                .size([0.0, -ui.frame_height_with_spacing()*2.0])
+                .size([0.0, -ui.frame_height_with_spacing() * 2.0])
                 .always_auto_resize(true)
                 .build(ui, || {
                     if logs.is_empty() {
@@ -477,7 +492,7 @@ fn render_fn(ui: &Ui) {
                                 l.render_row(ui);
                             }
                         }
-                    });    
+                    });
                 });
 
             let controls = ui.begin_group();
@@ -486,7 +501,7 @@ fn render_fn(ui: &Ui) {
             ui.checkbox("Success", &mut settings.copy_success);
             ui.same_line();
             ui.checkbox("Failure", &mut settings.copy_failure);
-            
+
             if ui.button(e("Copy dps.report urls")) {
                 let urls = collect_urls(&logs, &settings);
                 if !urls.is_empty() {

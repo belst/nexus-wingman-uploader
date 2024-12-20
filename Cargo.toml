@@ -20,6 +20,7 @@ serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 ureq = { version = "2.10.1", features = ["json"] }
 ureq_multipart = "1.1.1"
+winecheck = "0.1.0"
 
 [dependencies.revtc]
 git = "https://github.com/belst/revtc"
