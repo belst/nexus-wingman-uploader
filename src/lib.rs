@@ -1,8 +1,8 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        mpsc::{self, Receiver, Sender},
         Mutex,
+        mpsc::{self, Receiver, Sender},
     },
     thread::{self},
     time::{Duration, Instant},
@@ -12,12 +12,13 @@ use arcdpslog::Step;
 use common::*;
 use filewatcher::ReceiverExt;
 use nexus::{
-    gui::{register_render, RenderType},
+    AddonFlags, UpdateProvider,
+    gui::{RenderType, register_render},
     imgui::{ChildWindow, TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window},
-    keybind::{register_keybind_with_struct, Keybind},
+    keybind::{Keybind, register_keybind_with_struct},
     keybind_handler,
     paths::get_addon_dir,
-    render, AddonFlags, UpdateProvider,
+    render,
 };
 use notify::{Event, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use settings::Settings;
@@ -252,14 +253,15 @@ fn unload() {
 
     log::trace!("Waiting on threads");
     for t in STATE.threads.lock().unwrap().drain(..) {
-        log::trace!(
-            "Waiting on thread {}",
-            t.thread()
-                .name()
-                .map(String::from)
-                .unwrap_or_else(|| format!("{:?}", t.thread().id()))
-        );
-        t.join().unwrap();
+        let threadname = t
+            .thread()
+            .name()
+            .map(String::from)
+            .unwrap_or_else(|| format!("{:?}", t.thread().id()));
+        log::trace!("Waiting on thread {}", threadname);
+        if let Err(e) = t.join() {
+            log::error!("Failed to join thread {}: {:#?}", threadname, e);
+        }
     }
     // this should get cleaned up on FreeLibary but why not
     std::mem::swap(STATE.logs.lock().unwrap().as_mut(), &mut vec![]);
