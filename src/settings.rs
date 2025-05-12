@@ -1,6 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
-    fs::{create_dir_all, File},
+    fs::{File, create_dir_all},
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
 };
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     common::RED,
-    util::{e, UiExt},
+    util::{UiExt, e},
 };
 
 fn default_true() -> bool {
@@ -47,13 +47,17 @@ pub struct Settings {
     pub filter_wingman: Vec<u16>,
     #[serde(default)]
     pub hide_hotfix_notification_20241114: bool,
+    #[serde(default)]
+    pub hotfix_20250512_executed: bool,
 }
 
 impl Settings {
     const fn default() -> Self {
         Self {
+            // Cannot use default_dir() because it's not consat
             logpath: String::new(),
             dpsreport_token: String::new(),
+            // Cannot use default_copyformat() because it's not const
             dpsreport_copyformat: String::new(),
             show_window: true,
             rev_log_order: false,
@@ -64,6 +68,7 @@ impl Settings {
             filter_wingman: Vec::new(),
             filter_dpsreport: Vec::new(),
             hide_hotfix_notification_20241114: false,
+            hotfix_20250512_executed: false,
         }
     }
 
@@ -81,6 +86,23 @@ impl Settings {
         base.push("arcdps");
         base.push("arcdps.cbtlogs");
         base
+    }
+
+    // Default was an empty string if config file did not exist yet
+    // If the file existed (even if empty) it worked correctly
+    fn check_hotfix20250512(&self) -> bool {
+        self.dpsreport_copyformat.is_empty()
+    }
+
+    pub fn fix_hotfix20250512(&mut self) {
+        // Only do this once so if someone actually uses an empty copyformat we wont overwrite it
+        // next restart
+        if !self.hotfix_20250512_executed && self.check_hotfix20250512() {
+            log::info!("Empty copyformat detected, setting default (Hotfix 20250512)");
+            self.dpsreport_copyformat = default_copyformat();
+        }
+        // Always set this to true so we don't run this again
+        self.hotfix_20250512_executed = true;
     }
 
     pub fn check_hotfix20241114(&self) -> bool {
@@ -103,10 +125,14 @@ impl Settings {
         let path = path.as_ref();
         if path.exists() {
             let contents = std::fs::read_to_string(path)?;
-            let settings: Self = serde_json::from_str(&contents)?;
+            let mut settings: Self = serde_json::from_str(&contents)?;
+            settings.fix_hotfix20250512();
             *SETTINGS.lock().unwrap() = settings;
         } else {
-            SETTINGS.lock().unwrap().logpath = Self::default_dir().display().to_string();
+            // Need to set here because it's not const
+            let mut settings = SETTINGS.lock().unwrap();
+            settings.logpath = Self::default_dir().display().to_string();
+            settings.dpsreport_copyformat = default_copyformat();
         }
         Ok(())
     }
@@ -233,17 +259,17 @@ pub fn render(ui: &Ui) {
         ui.input_text(e("dps.report copy format"), copyformat)
             .read_only(!EDIT_COPYFORMAT.get())
             .build();
-        ui.help_marker(|| {
-            ui.tooltip(|| {
-                ui.text(
-                    "You can configure the format that your dps.report url strings are copied as using the following parameters:",
-                );
-                ui.text("@1 - dps.report url");
-                ui.text("@2 - boss name and CM status");
-                ui.text("@3 - boss id");
-                ui.text("@4 - encounter success/fail");
-            })
-        });
+    });
+    ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text(
+                "You can configure the format that your dps.report url strings are copied as using the following parameters:",
+            );
+            ui.text("@1 - dps.report url");
+            ui.text("@2 - boss name and CM status");
+            ui.text("@3 - boss id");
+            ui.text("@4 - encounter success/fail");
+        })
     });
     ui.same_line();
     if ui.button(if !EDIT_COPYFORMAT.get() {

@@ -263,7 +263,7 @@ fn unload() {
             log::error!("Failed to join thread {}: {:#?}", threadname, e);
         }
     }
-    // this should get cleaned up on FreeLibary but why not
+    // Call this to run destructors (free the vec)
     std::mem::swap(STATE.logs.lock().unwrap().as_mut(), &mut vec![]);
     log::trace!("Unloaded");
 }
@@ -498,6 +498,7 @@ fn render_fn(ui: &Ui) {
                 });
 
             let controls = ui.begin_group();
+            ui.align_text_to_frame_padding();
             ui.text(e("Include:"));
             ui.same_line();
             ui.checkbox("Success", &mut settings.copy_success);

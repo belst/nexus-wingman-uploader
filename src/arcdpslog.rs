@@ -17,8 +17,8 @@ use crate::common::GREEN;
 use crate::common::RED;
 use crate::dpsreport::DpsReportResponse;
 use crate::evtc::identifier_from_agent;
-use crate::util::e;
 use crate::util::UiExt;
+use crate::util::e;
 
 // Maybe this needs a retry option for retryable errors
 #[derive(Debug)]
@@ -212,12 +212,13 @@ impl Log {
     pub fn render_row(&self, ui: &Ui) {
         // Encounter
         ui.table_next_column();
-        if let Step::Done(evtc) = &self.evtc {
-            self.render_title(ui, evtc);
+        let hovered = if let Step::Done(evtc) = &self.evtc {
+            self.render_title(ui, evtc)
         } else {
             ui.text(self.basename().as_str());
-        }
-        if ui.is_item_hovered() {
+            ui.is_item_hovered()
+        };
+        if hovered {
             self.render_hovered(ui);
         }
         // Timestamp
@@ -238,7 +239,9 @@ impl Log {
         self.render_wingman(ui);
     }
 
-    fn render_title(&self, ui: &Ui, evtc: &Encounter) {
+    // Returns wether the text was hovered
+    fn render_title(&self, ui: &Ui, evtc: &Encounter) -> bool {
+        let hovered;
         if let Step::Done(dpsreport) = &self.dpsreport {
             let color = if dpsreport.encounter.success {
                 GREEN
@@ -251,14 +254,19 @@ impl Log {
                 } else {
                     ui.text_colored(color, format!("{} ({})", dpsreport.encounter.boss, mode));
                 }
+                hovered = ui.is_item_hovered();
             } else {
                 ui.text_colored(color, &dpsreport.encounter.boss);
+                // needs to be before the help_marker because it also has a hovered check
+                hovered = ui.is_item_hovered();
                 ui.same_line();
                 ui.help_marker(|| ui.text("Could not determine CM/LCM/NM mode"));
             }
         } else {
             ui.text(format!("{}", BossId::from_header_id(evtc.header.boss_id)));
-        }
+            hovered = ui.is_item_hovered();
+        };
+        hovered
     }
 
     pub fn render_hovered(&self, ui: &Ui) {

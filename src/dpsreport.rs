@@ -58,15 +58,27 @@ pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHan
                         _ => Err(anyhow::anyhow!("Unknown error {}", res.status())),
                     },
                     Err(e) => {
-                        let msg = format!("Failed to upload file: {e}").replace(&token, "******");
+                        // token gets set afterwards in main thread again
+                        // this should only happen on first install if no custom token is set
+                        let msg = if token.is_empty() {
+                            format!("Failed to upload file: {e}")
+                        } else {
+                            format!("Failed to upload file: {e}").replace(&token, "******")
+                        };
                         log::error!("[DpsReport] {msg}");
                         Err(anyhow::anyhow!(msg))
                     }
                     Ok(res) => {
-                        log::info!(
-                            "[DpsReport] Response: {}",
-                            format!("{res:?}").replace(&token, "******")
-                        );
+                        // token gets set afterwards in main thread again
+                        // this should only happen on first install if no custom token is set
+                        if token.is_empty() {
+                            log::info!("[DpsReport] Response: {}", format!("{res:?}"));
+                        } else {
+                            log::info!(
+                                "[DpsReport] Response: {}",
+                                format!("{res:?}").replace(&token, "******")
+                            );
+                        }
 
                         if (200..300).contains(&res.status()) {
                             let body = res.into_string().unwrap_or_default();
@@ -131,6 +143,10 @@ pub struct Encounter {
 
 impl Encounter {
     pub fn format_mode(&self) -> Option<String> {
+        // WvW logs don't have any other modes
+        if self.boss_id == 1 {
+            return Some("".into());
+        }
         match (self.emboldened, self.is_cm, self.is_legendary_cm) {
             (_, _, Some(true)) => Some("LCM".into()),
             (_, Some(true), _) => Some("CM".into()),
