@@ -12,11 +12,13 @@ use std::time::Instant;
 use std::{path::PathBuf, time::SystemTime};
 
 use crate::assets::DPSREPORT;
+use crate::assets::OPEN_IN_FOLDER;
 use crate::assets::WINGMAN;
 use crate::common::GREEN;
 use crate::common::RED;
 use crate::dpsreport::DpsReportResponse;
 use crate::evtc::identifier_from_agent;
+use crate::util;
 use crate::util::UiExt;
 use crate::util::e;
 
@@ -148,6 +150,25 @@ impl Log {
         }
     }
 
+    fn render_open_in_folder(&self, ui: &Ui) {
+        let Some(tex) = get_texture(OPEN_IN_FOLDER) else {
+            return;
+        };
+        let push_id = ui.push_id(format!("{}open_in_folder_btn", self.location.display()).as_str());
+        if ImageButton::new(tex.id(), [16.0, 16.0])
+            .frame_padding(0)
+            .build(ui)
+        {
+            if let Err(e) = util::open_with_selected(&self.location) {
+                log::error!("Failed to open folder: {e}");
+            }
+        }
+        push_id.end();
+        if ui.is_item_hovered() {
+            ui.tooltip_text(e("Show Log in Folder"));
+        }
+    }
+
     fn render_wingman(&self, ui: &Ui) {
         thread_local! {
             static TS: Cell<Instant> = Cell::new(Instant::now());
@@ -237,6 +258,9 @@ impl Log {
         // Wingman
         ui.table_next_column();
         self.render_wingman(ui);
+        // Open in Folder
+        ui.table_next_column();
+        self.render_open_in_folder(ui);
     }
 
     // Returns wether the text was hovered

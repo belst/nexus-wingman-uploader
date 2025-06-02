@@ -426,6 +426,13 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
                 init_width_or_weight: 20.0,
                 user_id: Default::default(),
             },
+            TableColumnSetup {
+                // Open in Folder
+                name: e(""),
+                flags: TableColumnFlags::WIDTH_FIXED,
+                init_width_or_weight: 20.0,
+                user_id: Default::default(),
+            },
         ],
         flags,
     );

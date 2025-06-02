@@ -24,7 +24,7 @@ winecheck = "0.1.0"
 
 [dependencies.windows]
 version = "0.60.0"
-features = ["Win32_System_Threading"]
+features = ["Win32_System_Threading", "Win32_UI_Shell_Common"]
 
 [dependencies.revtc]
 git = "https://github.com/belst/revtc"

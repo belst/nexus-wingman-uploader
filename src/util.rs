@@ -2,9 +2,28 @@ use nexus::{
     imgui::{StyleColor, Ui},
     localization::translate,
 };
+use std::path::Path;
+
+use windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems};
+use windows::core::{HSTRING, Result};
 
 pub fn e(s: &str) -> String {
     translate(s).unwrap_or_else(|| s.to_string())
+}
+
+pub fn open_with_selected(path: impl AsRef<Path>) -> Result<()> {
+    let path: &Path = path.as_ref();
+
+    unsafe {
+        let pidl = ILCreateFromPathW(&HSTRING::from(path.as_os_str()));
+        if pidl.is_null() {
+            return Err(windows::core::Error::from_win32());
+        }
+        SHOpenFolderAndSelectItems(pidl, None, 0)?;
+        ILFree(Some(pidl));
+    }
+
+    Ok(())
 }
 
 pub trait UiExt {
