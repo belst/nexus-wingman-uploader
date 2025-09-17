@@ -36,7 +36,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.CLIENT_DLL_NAME }}.dll
-        path: target\release\${{ env.CLIENT_DLL_NAME }}.dll
+        path: target\x86_64-pc-windows-msvc\release\${{ env.CLIENT_DLL_NAME }}.dll
 
   release:
     name: Release Binaries
