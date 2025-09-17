@@ -206,7 +206,11 @@ fn load() {
     assets::init_textures();
     // lots of locking and relocking but should be fine, since nothing is running
     let producer_tx = STATE.init_producer();
-    Settings::from_path(config_path()).expect("Failed to load settings");
+    // Todo move failure handling to from_path impl
+    Settings::from_path(config_path()).unwrap_or_else(|e| {
+        log::error!("Failed to load settings, using default. Error: {e}");
+        Settings::get_mut().init();
+    });
     STATE.init_filewatcher(Settings::get().logpath().into());
     let evtc_rx = STATE.init_evtc_worker();
     STATE.append_thread(evtc::run(evtc_rx, producer_tx.clone()));

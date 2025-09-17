@@ -72,6 +72,11 @@ impl Settings {
         }
     }
 
+    pub fn init(&mut self) {
+        self.logpath = Self::default_dir().display().to_string();
+        self.dpsreport_copyformat = default_copyformat();
+    }
+
     pub fn get() -> MutexGuard<'static, Self> {
         SETTINGS.lock().unwrap()
     }
@@ -131,8 +136,7 @@ impl Settings {
         } else {
             // Need to set here because it's not const
             let mut settings = SETTINGS.lock().unwrap();
-            settings.logpath = Self::default_dir().display().to_string();
-            settings.dpsreport_copyformat = default_copyformat();
+            settings.init();
         }
         Ok(())
     }
