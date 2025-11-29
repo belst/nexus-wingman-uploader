@@ -40,6 +40,15 @@ pub const WEAVER: &str = "UPLOADER_WEAVER_16x16";
 pub const WILLBENDER: &str = "UPLOADER_WILLBENDER_16x16";
 pub const WINGMAN: &str = "UPLOADER_WINGMAN_16x16";
 pub const OPEN_IN_FOLDER: &str = "UPLOADER_OPEN_IN_FOLDER_16x16";
+pub const TROUBADOUR: &str = "UPLOADER_TROUBADOUR_16x16";
+pub const RITUALIST: &str = "UPLOADER_RITUALIST_16x16";
+pub const PARAGON: &str = "UPLOADER_PARAGON_16x16";
+pub const LUMINARY: &str = "UPLOADER_LUMINARY_16x16";
+pub const GALESHOT: &str = "UPLOADER_GALESHOT_16x16";
+pub const EVOKER: &str = "UPLOADER_EVOKER_16x16";
+pub const CONDUIT: &str = "UPLOADER_CONDUIT_16x16";
+pub const ANTIQUARY: &str = "UPLOADER_ANTIQUARY_16x16";
+pub const AMALGAM: &str = "UPLOADER_AMALGAM_16x16";
 pub fn init_textures() {
     load_texture_from_memory(DEADEYE, include_bytes!("../assets/deadeye_16x16.png"), None);
     load_texture_from_memory(HERALD, include_bytes!("../assets/herald_16x16.png"), None);
@@ -81,4 +90,13 @@ pub fn init_textures() {
     load_texture_from_memory(WILLBENDER, include_bytes!("../assets/willbender_16x16.png"), None);
     load_texture_from_memory(WINGMAN, include_bytes!("../assets/wingman_16x16.png"), None);
     load_texture_from_memory(OPEN_IN_FOLDER, include_bytes!("../assets/open_in_folder_16x16.png"), None);
+    load_texture_from_memory(TROUBADOUR, include_bytes!("../assets/troubadour_16x16.png"), None);
+    load_texture_from_memory(RITUALIST, include_bytes!("../assets/ritualist_16x16.png"), None);
+    load_texture_from_memory(PARAGON, include_bytes!("../assets/paragon_16x16.png"), None);
+    load_texture_from_memory(LUMINARY, include_bytes!("../assets/luminary_16x16.png"), None);
+    load_texture_from_memory(GALESHOT, include_bytes!("../assets/galeshot_16x16.png"), None);
+    load_texture_from_memory(EVOKER, include_bytes!("../assets/evoker_16x16.png"), None);
+    load_texture_from_memory(CONDUIT, include_bytes!("../assets/conduit_16x16.png"), None);
+    load_texture_from_memory(ANTIQUARY, include_bytes!("../assets/antiquary_16x16.png"), None);
+    load_texture_from_memory(AMALGAM, include_bytes!("../assets/amalgam_16x16.png"), None);
 }

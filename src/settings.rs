@@ -6,7 +6,10 @@ use std::{
 };
 
 use dirs_next::document_dir;
-use nexus::imgui::{StyleColor, Ui};
+use nexus::{
+    imgui::{ButtonFlags, ItemFlag, StyleColor, StyleVar, Ui},
+    paths::get_addon_dir,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -156,6 +159,11 @@ impl Settings {
     }
 }
 
+pub(crate) fn config_path() -> PathBuf {
+    get_addon_dir("wingman-uploader")
+        .expect("Addon dir to exist")
+        .join("settings.json")
+}
 static SETTINGS: Mutex<Settings> = Mutex::new(Settings::default());
 
 fn validate_path(path: &str) -> bool {
@@ -185,6 +193,23 @@ pub fn render(ui: &Ui) {
         FILTER_WINGMAN.set(settings.filter_wingman.clone());
         FILTER_DPSREPORT.set(settings.filter_dpsreport.clone());
         INITIALIZED.set(true);
+    }
+
+    let valid = PATH_VALID.get() && !PATH_EDIT.get() && !EDIT_TOKEN.get() && !EDIT_COPYFORMAT.get();
+    let stylevar = if !valid {
+        Some(ui.push_style_var(StyleVar::Alpha(0.5)))
+    } else {
+        None
+    };
+    if ui.button(e("Save") + "##saveconfig") && valid {
+        let mut settings = SETTINGS.lock().unwrap();
+        log::trace!("Storing config");
+        if let Err(e) = settings.store(config_path()) {
+            log::error!("Failed to store settings: {e}");
+        }
+    }
+    if let Some(stylevar) = stylevar {
+        stylevar.end();
     }
 
     let color = if !PATH_VALID.get() {

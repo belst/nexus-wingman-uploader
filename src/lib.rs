@@ -149,12 +149,6 @@ static STATE: State = State {
 };
 const KB_IDENTIFIER: &str = "KB_OPEN_WINGMAN_UPLOADS";
 
-fn config_path() -> PathBuf {
-    get_addon_dir("wingman-uploader")
-        .expect("Addon dir to exist")
-        .join("settings.json")
-}
-
 fn collect_urls(logs: &[arcdpslog::Log], settings: &Settings) -> String {
     let mut urls = vec![];
     for l in logs {
@@ -207,7 +201,7 @@ fn load() {
     // lots of locking and relocking but should be fine, since nothing is running
     let producer_tx = STATE.init_producer();
     // Todo move failure handling to from_path impl
-    Settings::from_path(config_path()).unwrap_or_else(|e| {
+    Settings::from_path(settings::config_path()).unwrap_or_else(|e| {
         log::error!("Failed to load settings, using default. Error: {e}");
         Settings::get_mut().init();
     });
@@ -240,10 +234,6 @@ fn load() {
 fn unload() {
     log::info!("Unloading log-uploader");
     let settings = Settings::get();
-    log::trace!("Storing config");
-    if let Err(e) = settings.store(config_path()) {
-        log::error!("Failed to store settings: {e}");
-    }
     log::trace!("Unwatching logpath");
     STATE.unwatch(settings.logpath());
     drop(settings);
