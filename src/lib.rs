@@ -283,7 +283,16 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
             }
             WorkerType::DpsReport(r) => match r {
                 Ok(Ok(r)) => {
-                    Settings::get_mut().dpsreport_token = r.user_token.clone();
+                    let mut settings = Settings::get_mut();
+                    // If the token changed, we need to update it
+                    // Also persist to disk so user doesn't have to press save in options
+                    // might freeze the game on first log upload after install
+                    if settings.dpsreport_token != r.user_token {
+                        settings.dpsreport_token = r.user_token.clone();
+                        settings.store(settings::config_path()).unwrap_or_else(|e| {
+                            log::error!("Failed to store settings: {e}");
+                        });
+                    };
                     logs[index].dpsreport = Step::from_value(Ok(r));
                 }
                 Ok(Err(e)) => {
