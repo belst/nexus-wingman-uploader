@@ -8,6 +8,7 @@ use nexus::imgui::Ui;
 use nexus::texture::get_texture;
 use revtc::{bossdata::BossId, evtc::Encounter};
 use std::cell::Cell;
+use std::ffi::CString;
 use std::time::Instant;
 use std::{path::PathBuf, time::SystemTime};
 
@@ -44,6 +45,9 @@ impl<T> Step<T> {
 
 pub struct Log {
     pub location: PathBuf,
+    /// Null-terminated form of `location`, built once and reused for every
+    /// FFI event so we only allocate per log instead of per event.
+    pub location_c: CString,
     pub evtc: Step<Encounter>,
     pub dpsreport: Step<DpsReportResponse>,
     pub dpsreport_count: u32,
@@ -64,8 +68,10 @@ fn pulse(t: f32) -> f32 {
 impl Log {
     pub fn new(location: PathBuf) -> Self {
         use Step as S;
+        let location_c = crate::events::path_to_cstring(&location);
         Self {
             location,
+            location_c,
             evtc: S::Pending,
             dpsreport: S::Pending,
             dpsreport_count: 0,

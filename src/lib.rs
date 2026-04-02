@@ -1,4 +1,5 @@
 use std::{
+    ffi::CString,
     path::{Path, PathBuf},
     sync::{
         Mutex,
@@ -16,27 +17,28 @@ use nexus::{
     gui::{RenderType, register_render},
     imgui::{ChildWindow, TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window},
     keybind::{Keybind, register_keybind_with_struct},
-    keybind_handler,
-    paths::get_addon_dir,
-    render,
+    keybind_handler, render,
 };
 use notify::{Event, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use settings::Settings;
 use util::e;
 
+use crate::events::{
+    DpsReportEvent, EV_DPSREPORT, EV_LOG_DETECTED, EV_LOG_PARSED, EV_WINGMAN, LogDetectedEvent,
+    LogParsedEvent, WingmanEvent,
+};
+
 mod arcdpslog;
 mod assets;
 mod common;
 mod dpsreport;
+mod events;
 mod evtc;
 mod filewatcher;
 mod settings;
 mod util;
 mod wingman;
 
-// TODO: grep for all the `let _ =` and add error handling
-// TODO: Implement actual dpsreport
-// TODO: Icons
 struct State {
     producer_rx: Mutex<Option<Receiver<common::WorkerMessage>>>,
     evtc_worker: Mutex<Option<Sender<evtc::EvtcJob>>>,
@@ -270,11 +272,12 @@ fn get_new_logs(logs: &mut Vec<arcdpslog::Log>) {
     while let Ok(iter) = file_rx.next_log() {
         for l in iter {
             log::info!("New log found: {}", l.display());
-            let cpath = common::path_to_cstring(&l);
+            let log = arcdpslog::Log::new(l);
             EV_LOG_DETECTED.raise(&LogDetectedEvent {
-                file_path: cpath.as_ptr(),
+                file_path: log.location_c.as_ptr(),
+                file_path_len: log.location_c.as_bytes().len() as u32,
             });
-            logs.push(arcdpslog::Log::new(l));
+            logs.push(log);
         }
     }
 }
@@ -284,9 +287,10 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
         match payload {
             WorkerType::Evtc(evtc) => {
                 if let Ok(ref enc) = evtc {
-                    let cpath = common::path_to_cstring(&logs[index].location);
+                    let cpath = &logs[index].location_c;
                     EV_LOG_PARSED.raise(&LogParsedEvent {
                         file_path: cpath.as_ptr(),
+                        file_path_len: cpath.as_bytes().len() as u32,
                         boss_id: enc.header.boss_id,
                         player_count: enc.agents.len() as u32,
                     });
@@ -305,12 +309,13 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
                             log::error!("Failed to store settings: {e}");
                         });
                     };
-                    let cpath = common::path_to_cstring(&logs[index].location);
-                    let cpermalink =
-                        std::ffi::CString::new(r.permalink.as_str()).unwrap_or_default();
+                    let cpath = &logs[index].location_c;
+                    let cpermalink = CString::new(r.permalink.as_str()).unwrap_or_default();
                     EV_DPSREPORT.raise(&DpsReportEvent {
                         file_path: cpath.as_ptr(),
+                        file_path_len: cpath.as_bytes().len() as u32,
                         permalink: cpermalink.as_ptr(),
+                        permalink_len: cpermalink.as_bytes().len() as u32,
                         boss_id: r.encounter.boss_id,
                         success: r.encounter.success,
                     });
@@ -325,13 +330,15 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
             },
             WorkerType::Wingman(r) => {
                 if let Ok(accepted) = &r {
-                    let cpath = common::path_to_cstring(&logs[index].location);
+                    let cpath = &logs[index].location_c;
                     let boss_id = match &logs[index].evtc {
                         Step::Done(enc) => enc.header.boss_id,
                         _ => 0,
                     };
                     EV_WINGMAN.raise(&WingmanEvent {
+                        version: size_of::<WingmanEvent>() as u32,
                         file_path: cpath.as_ptr(),
+                        file_path_len: cpath.as_bytes().len() as u32,
                         boss_id,
                         accepted: *accepted,
                     });
@@ -497,9 +504,11 @@ You can also hide this message permanently if the configured path is correct."#,
                 STATE.unwatch(&settings.logpath);
                 settings.fix_hotfix20241114();
                 STATE.watch(&settings.logpath);
+                _ = settings.store(settings::config_path());
             }
             if ui.button(e("Don't show this window again")) {
                 settings.hide_hotfix_notification_20241114 = true;
+                _ = settings.store(settings::config_path());
             }
         }
     }
@@ -508,8 +517,8 @@ You can also hide this message permanently if the configured path is correct."#,
 fn render_fn(ui: &Ui) {
     let mut logs = STATE.logs.lock().unwrap();
     get_new_logs(&mut logs);
-    advance_logs(&mut logs);
     update_logs(&mut logs);
+    advance_logs(&mut logs);
 
     let mut settings = Settings::get_mut();
     render_hotfix20241114(ui, &mut settings);
