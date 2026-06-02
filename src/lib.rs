@@ -33,6 +33,7 @@ mod filewatcher;
 mod settings;
 mod util;
 mod wingman;
+mod donbot;
 
 // TODO: grep for all the `let _ =` and add error handling
 // TODO: Implement actual dpsreport
@@ -44,6 +45,7 @@ struct State {
     file_rx: Mutex<Option<Receiver<Result<Event, notify::Error>>>>,
     dps_worker: Mutex<Option<Sender<dpsreport::DpsJob>>>,
     wingman_worker: Mutex<Option<Sender<wingman::WingmanJob>>>,
+    donbot_worker: Mutex<Option<Sender<donbot::DonBotJob>>>,
     threads: Mutex<Vec<thread::JoinHandle<()>>>,
     logs: Mutex<Vec<arcdpslog::Log>>,
 }
@@ -79,6 +81,12 @@ impl State {
     fn init_wingman_worker(&self) -> Receiver<wingman::WingmanJob> {
         let (tx, rx) = mpsc::channel();
         *self.wingman_worker.lock().unwrap() = Some(tx);
+        rx
+    }
+    
+    fn init_donbot_worker(&self) -> Receiver<donbot::DonBotJob> {
+        let (tx, rx) = mpsc::channel();
+        *self.donbot_worker.lock().unwrap() = Some(tx);
         rx
     }
 
@@ -144,6 +152,7 @@ static STATE: State = State {
     file_rx: Mutex::new(None),
     dps_worker: Mutex::new(None),
     wingman_worker: Mutex::new(None),
+    donbot_worker: Mutex::new(None),
     threads: Mutex::new(Vec::new()),
     logs: Mutex::new(Vec::new()),
 };
@@ -212,6 +221,8 @@ fn load() {
     STATE.append_thread(dpsreport::run(dpsreport_rx, producer_tx.clone()));
     let wingman_rx = STATE.init_wingman_worker();
     STATE.append_thread(wingman::run(wingman_rx, producer_tx.clone()));
+    let donbot_rx = STATE.init_donbot_worker();
+    STATE.append_thread(donbot::run(donbot_rx, producer_tx.clone()));
 
     register_render(RenderType::Render, render!(render_fn)).revert_on_unload();
     register_render(RenderType::OptionsRender, render!(render_options)).revert_on_unload();
@@ -244,6 +255,7 @@ fn unload() {
     drop(STATE.file_rx.lock().unwrap().take());
     drop(STATE.dps_worker.lock().unwrap().take());
     drop(STATE.wingman_worker.lock().unwrap().take());
+    drop(STATE.donbot_worker.lock().unwrap().take());
 
     log::trace!("Waiting on threads");
     for t in STATE.threads.lock().unwrap().drain(..) {
@@ -304,7 +316,11 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
             },
             WorkerType::Wingman(r) => {
                 logs[index].wingman = Step::from_value(r);
-            }
+            },
+            /*WorkerType::Donbot(r) => {
+                logs[index].donbot = Step::from_value(r);
+            },*/
+            WorkerType::Donbot(r) => logs[index].donbot = Step::from_value(r),
         }
     }
 }
@@ -320,6 +336,10 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
     };
     let wingman_tx = STATE.wingman_worker.lock().unwrap();
     let Some(wingman_tx) = wingman_tx.as_ref() else {
+        return;
+    };
+    let donbot_tx = STATE.donbot_worker.lock().unwrap();
+    let Some(donbot_tx) = donbot_tx.as_ref() else {
         return;
     };
     // This can easily be extended to support other stuff like discord webhooks
@@ -382,6 +402,31 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
                 l.wingman = Step::Skipped;
             }
         }
+        if matches!(l.donbot, Step::Pending) {
+            let settings = Settings::get();
+            let enabled = settings.enable_donbot
+                && !settings.donbot_token.is_empty()
+                && !settings.donbot_base_url.is_empty();
+            let Step::Done(ref enc) = l.evtc else {
+                unreachable!()
+            };
+            if enabled
+                && enc.header.boss_id != 1
+                && !settings.filter_wingman.contains(&enc.header.boss_id)
+            {
+                l.donbot = Step::Active;
+                if let Err(e) = donbot_tx.send((
+                    i,
+                    l.location.clone(),
+                    settings.donbot_base_url.clone(),
+                    settings.donbot_token.clone(),
+                )) {
+                    log::error!("failed to send donbot job: {e}");
+                }
+            } else {
+                l.donbot = Step::Skipped;
+            }
+        }
         if let Step::Retry(t) = l.dpsreport {
             if l.dpsreport_count > 3 {
                 l.dpsreport = Step::Error(anyhow::anyhow!("Retry limit reached"));
@@ -424,6 +469,13 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
             },
             TableColumnSetup {
                 // Wingman
+                name: e(""),
+                flags: TableColumnFlags::WIDTH_FIXED,
+                init_width_or_weight: 20.0,
+                user_id: Default::default(),
+            },
+            TableColumnSetup {
+                // Donbot
                 name: e(""),
                 flags: TableColumnFlags::WIDTH_FIXED,
                 init_width_or_weight: 20.0,

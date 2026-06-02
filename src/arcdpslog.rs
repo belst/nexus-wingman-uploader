@@ -14,6 +14,7 @@ use std::{path::PathBuf, time::SystemTime};
 use crate::assets::DPSREPORT;
 use crate::assets::OPEN_IN_FOLDER;
 use crate::assets::WINGMAN;
+use crate::assets::DONBOT;
 use crate::common::GREEN;
 use crate::common::RED;
 use crate::dpsreport::DpsReportResponse;
@@ -48,6 +49,7 @@ pub struct Log {
     pub dpsreport: Step<DpsReportResponse>,
     pub dpsreport_count: u32,
     pub wingman: Step<bool>,
+    pub donbot: Step<bool>,
 }
 
 fn format_time(time: SystemTime) -> String {
@@ -70,6 +72,7 @@ impl Log {
             dpsreport: S::Pending,
             dpsreport_count: 0,
             wingman: S::Pending,
+            donbot: S::Pending,
         }
     }
 
@@ -230,6 +233,67 @@ impl Log {
         }
     }
 
+    fn render_donbot(&self, ui: &Ui) {
+        thread_local! {
+            static TS: Cell<Instant> = Cell::new(Instant::now());
+        }
+        let Some(tex) = get_texture(DONBOT) else {
+            return;
+        };
+        match &self.donbot {
+            Step::Done(donbot) => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col(if *donbot {
+                        // dont tint on success
+                        [1.0, 1.0, 1.0, 1.0]
+                    } else {
+                        let mut red = RED;
+                        red[3] = 0.3;
+                        red
+                    })
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e(if *donbot {
+                        "Log queued for donbot"
+                    } else {
+                        "Error queueing for Log"
+                    }));
+                }
+            }
+            Step::Skipped => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col([1.0, 1.0, 1.0, 0.3])
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e("Skipped"));
+                }
+            }
+            Step::Active | Step::Pending => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col([1.0, 1.0, 1.0, pulse(TS.get().elapsed().as_secs_f32())])
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e(if matches!(self.donbot, Step::Active) {
+                        "Uploading..."
+                    } else {
+                        "Queued"
+                    }));
+                }
+            }
+            Step::Error(err) => {
+                let mut red = RED;
+                red[3] = 0.3;
+                Image::new(tex.id(), [16.0, 16.0]).tint_col(red).build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e("Error uploading to donbot: ") + &format!("{err}"));
+                }
+            }
+            Step::Retry(_t) => {
+                // Not supported
+            }
+        }
+    }
+
     pub fn render_row(&self, ui: &Ui) {
         // Encounter
         ui.table_next_column();
@@ -258,6 +322,9 @@ impl Log {
         // Wingman
         ui.table_next_column();
         self.render_wingman(ui);
+        // Donbot
+        //ui.table_next_column();
+        //self.render_donbot(ui);
         // Open in Folder
         ui.table_next_column();
         self.render_open_in_folder(ui);

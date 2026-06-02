@@ -695,6 +695,7 @@ name = "log_uploader"
 version = "1.5.3"
 dependencies = [
  "anyhow",
+ "base64",
  "chrono",
  "dirs-next",
  "log",

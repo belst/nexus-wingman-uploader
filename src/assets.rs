@@ -39,6 +39,7 @@ pub const WARRIOR: &str = "UPLOADER_WARRIOR_16x16";
 pub const WEAVER: &str = "UPLOADER_WEAVER_16x16";
 pub const WILLBENDER: &str = "UPLOADER_WILLBENDER_16x16";
 pub const WINGMAN: &str = "UPLOADER_WINGMAN_16x16";
+pub const DONBOT: &str = "UPLOADER_DONBOT_16x16";
 pub const OPEN_IN_FOLDER: &str = "UPLOADER_OPEN_IN_FOLDER_16x16";
 pub const TROUBADOUR: &str = "UPLOADER_TROUBADOUR_16x16";
 pub const RITUALIST: &str = "UPLOADER_RITUALIST_16x16";
@@ -89,6 +90,7 @@ pub fn init_textures() {
     load_texture_from_memory(WEAVER, include_bytes!("../assets/weaver_16x16.png"), None);
     load_texture_from_memory(WILLBENDER, include_bytes!("../assets/willbender_16x16.png"), None);
     load_texture_from_memory(WINGMAN, include_bytes!("../assets/wingman_16x16.png"), None);
+    load_texture_from_memory(DONBOT, include_bytes!("../assets/donbot_16x16.png"), None);
     load_texture_from_memory(OPEN_IN_FOLDER, include_bytes!("../assets/open_in_folder_16x16.png"), None);
     load_texture_from_memory(TROUBADOUR, include_bytes!("../assets/troubadour_16x16.png"), None);
     load_texture_from_memory(RITUALIST, include_bytes!("../assets/ritualist_16x16.png"), None);

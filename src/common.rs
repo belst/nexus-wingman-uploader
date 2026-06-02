@@ -36,11 +36,16 @@ impl WorkerMessage {
             payload: WorkerType::Wingman(wingman),
         }
     }
+
+    pub fn donbot(index: usize, result: anyhow::Result<(bool)>) -> Self {
+        Self { index, payload: WorkerType::Donbot(result) }
+    }
 }
 
 #[derive(Debug)]
 pub enum WorkerType {
     DpsReport(Result<Result<DpsReportResponse, std::time::Instant>>),
     Wingman(Result<bool>),
+    Donbot(Result<bool>),
     Evtc(Result<Encounter>),
 }

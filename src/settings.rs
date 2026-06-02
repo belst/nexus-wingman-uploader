@@ -44,10 +44,16 @@ pub struct Settings {
     pub enable_dpsreport: bool,
     #[serde(default = "default_true")]
     pub enable_wingman: bool,
+    #[serde(default = "default_true")]
+    pub enable_donbot: bool,
+    pub donbot_base_url: String,
+    pub donbot_token: String,
     #[serde(default)]
     pub filter_dpsreport: Vec<u16>,
     #[serde(default)]
     pub filter_wingman: Vec<u16>,
+    #[serde(default)]
+    pub filter_donbot: Vec<u16>,
     #[serde(default)]
     pub hide_hotfix_notification_20241114: bool,
     #[serde(default)]
@@ -68,8 +74,12 @@ impl Settings {
             copy_failure: true,
             enable_dpsreport: true,
             enable_wingman: true,
+            enable_donbot: false,
+            donbot_base_url: String::new(),
+            donbot_token: String::new(),
             filter_wingman: Vec::new(),
             filter_dpsreport: Vec::new(),
+            filter_donbot: Vec::new(),
             hide_hotfix_notification_20241114: false,
             hotfix_20250512_executed: false,
         }
@@ -180,8 +190,13 @@ pub fn render(ui: &Ui) {
         static DPSREPORT_COPYFORMAT: RefCell<String> = const { RefCell::new(String::new()) };
         static FILTER_WINGMAN: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
         static FILTER_DPSREPORT: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
+        static FILTER_DONBOT: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
         static EDIT_TOKEN: Cell<bool> = const { Cell::new(false) };
         static EDIT_COPYFORMAT: Cell<bool> = const { Cell::new(false) };
+        static DONBOT_TOKEN: RefCell<String> = const { RefCell::new(String::new()) };
+        static DONBOT_BASE_URL: RefCell<String> = const { RefCell::new(String::new()) };
+        static EDIT_DONBOT_TOKEN: Cell<bool> = const { Cell::new(false) };
+        static EDIT_DONBOT_BASE_URL: Cell<bool> = const { Cell::new(false) };
         static INITIALIZED: Cell<bool> = const { Cell::new(false) };
     }
 
@@ -192,6 +207,9 @@ pub fn render(ui: &Ui) {
         DPSREPORT_COPYFORMAT.set(settings.dpsreport_copyformat.clone());
         FILTER_WINGMAN.set(settings.filter_wingman.clone());
         FILTER_DPSREPORT.set(settings.filter_dpsreport.clone());
+        FILTER_DONBOT.set(settings.filter_donbot.clone());
+        DONBOT_TOKEN.set(settings.donbot_token.clone());
+        DONBOT_BASE_URL.set(settings.donbot_base_url.clone());
         INITIALIZED.set(true);
     }
 
@@ -355,6 +373,83 @@ pub fn render(ui: &Ui) {
         }
     }
     render_wingman_filter(ui, &mut settings.filter_wingman);
+
+    // donbot
+    /*ui.separator();
+    ui.checkbox(e("Enable Donbot"), &mut settings.enable_donbot);
+    // base url text field
+    DONBOT_BASE_URL.with_borrow_mut(|token| {
+        if !EDIT_DONBOT_BASE_URL.get() && token.as_str() != settings.donbot_base_url.as_str() {
+            // we are not editing but token changed
+            // can only happen if donbot report response was successful
+            // Update local input token
+            *token = settings.donbot_base_url.clone();
+        }
+        ui.input_text(e("Donbot Base Url"), token)
+            .read_only(!EDIT_DONBOT_BASE_URL.get())
+            .password(!EDIT_DONBOT_BASE_URL.get())
+            .build();
+    });
+    ui.same_line();
+    if ui.button(if !EDIT_DONBOT_BASE_URL.get() {
+        e("Edit") + "##editdonbotbaseurl"
+    } else {
+        e("Set") + "##setdonbotbaseurl"
+    }) {
+        // button got clicked, check current state and toggle it
+        if EDIT_DONBOT_BASE_URL.get() {
+            // Set button was clicked
+            DONBOT_BASE_URL.with_borrow(|token| {
+                settings.donbot_base_url = token.clone();
+            });
+        }
+        EDIT_DONBOT_BASE_URL.set(!EDIT_DONBOT_BASE_URL.get())
+    }
+    // token text field
+    DONBOT_TOKEN.with_borrow_mut(|token| {
+        if !EDIT_DONBOT_TOKEN.get() && token.as_str() != settings.donbot_token.as_str() {
+            // we are not editing but token changed
+            // can only happen if donbot report response was successful
+            // Update local input token
+            *token = settings.donbot_token.clone();
+        }
+        ui.input_text(e("Donbot Token"), token)
+            .read_only(!EDIT_DONBOT_TOKEN.get())
+            .password(!EDIT_DONBOT_TOKEN.get())
+            .build();
+    });
+    ui.same_line();
+    if ui.button(if !EDIT_DONBOT_TOKEN.get() {
+        e("Edit") + "##editdonbottoken"
+    } else {
+        e("Set") + "##setdonbottoken"
+    }) {
+        // button got clicked, check current state and toggle it
+        if EDIT_DONBOT_TOKEN.get() {
+            // Set button was clicked
+            DONBOT_TOKEN.with_borrow(|token| {
+                settings.donbot_token = token.clone();
+            });
+        }
+        EDIT_DONBOT_TOKEN.set(!EDIT_DONBOT_TOKEN.get())
+    }
+    ui.text("Don't upload logs to Donbot with the following boss ids:");
+    if ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text(
+                "You can check your log folder for the boss ids. It is the number in parentheses.",
+            );
+            ui.text("For example: Large Kitty Golem (19676)");
+            ui.text("The boss id would be 19676.");
+            ui.text("WvW logs are skipped by default. (ID: 1)");
+            ui.text("Click to open log folder.");
+        })
+    }) {
+        if let Err(e) = open::that_detached(&settings.logpath) {
+            log::error!("Failed to open log folder: {e}");
+        }
+    }
+    render_donbot_filter(ui, &mut settings.filter_donbot);*/
 }
 
 fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {
@@ -410,6 +505,35 @@ fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
     ID.set(id);
     ui.table_next_column();
     if ui.button(e("Add##wingmanfilterid")) {
+        filter.push(id as u16);
+    }
+}
+
+fn render_donbot_filter(ui: &Ui, filter: &mut Vec<u16>) {
+    let _t = ui.begin_table("donbot filter", 2);
+    let mut to_remove = Vec::new();
+    for (i, id) in filter.iter().enumerate() {
+        ui.table_next_row();
+        ui.table_next_column();
+        ui.text(format!("{}", id));
+        ui.table_next_column();
+        if ui.button(e("remove") + &format!("##donbotfilterremove{i}")) {
+            to_remove.push(i);
+        }
+    }
+    for tr in to_remove {
+        filter.remove(tr);
+    }
+    ui.table_next_row();
+    ui.table_next_column();
+    thread_local! {
+        static ID: Cell<i32> = const { Cell::new(0) };
+    }
+    let mut id = ID.get();
+    ui.input_int(e("ID##donbotfilterinput"), &mut id).build();
+    ID.set(id);
+    ui.table_next_column();
+    if ui.button(e("Add##donbotfilterid")) {
         filter.push(id as u16);
     }
 }
