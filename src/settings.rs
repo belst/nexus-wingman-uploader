@@ -375,7 +375,7 @@ pub fn render(ui: &Ui) {
     render_wingman_filter(ui, &mut settings.filter_wingman);
 
     // donbot
-    /*ui.separator();
+    ui.separator();
     ui.checkbox(e("Enable Donbot"), &mut settings.enable_donbot);
     // base url text field
     DONBOT_BASE_URL.with_borrow_mut(|token| {
@@ -449,7 +449,7 @@ pub fn render(ui: &Ui) {
             log::error!("Failed to open log folder: {e}");
         }
     }
-    render_donbot_filter(ui, &mut settings.filter_donbot);*/
+    render_donbot_filter(ui, &mut settings.filter_donbot);
 }
 
 fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {

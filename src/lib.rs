@@ -317,9 +317,6 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
             WorkerType::Wingman(r) => {
                 logs[index].wingman = Step::from_value(r);
             },
-            /*WorkerType::Donbot(r) => {
-                logs[index].donbot = Step::from_value(r);
-            },*/
             WorkerType::Donbot(r) => logs[index].donbot = Step::from_value(r),
         }
     }

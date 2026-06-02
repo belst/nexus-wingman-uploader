@@ -323,8 +323,8 @@ impl Log {
         ui.table_next_column();
         self.render_wingman(ui);
         // Donbot
-        //ui.table_next_column();
-        //self.render_donbot(ui);
+        ui.table_next_column();
+        self.render_donbot(ui);
         // Open in Folder
         ui.table_next_column();
         self.render_open_in_folder(ui);
