@@ -417,6 +417,7 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
                     l.location.clone(),
                     settings.donbot_base_url.clone(),
                     settings.donbot_token.clone(),
+                    settings.donbot_guildid.clone(),
                 )) {
                     log::error!("failed to send donbot job: {e}");
                 }

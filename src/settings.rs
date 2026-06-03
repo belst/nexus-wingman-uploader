@@ -48,6 +48,7 @@ pub struct Settings {
     pub enable_donbot: bool,
     pub donbot_base_url: String,
     pub donbot_token: String,
+    pub donbot_guildid: String,
     #[serde(default)]
     pub filter_dpsreport: Vec<u16>,
     #[serde(default)]
@@ -77,6 +78,7 @@ impl Settings {
             enable_donbot: false,
             donbot_base_url: String::new(),
             donbot_token: String::new(),
+            donbot_guildid: String::new(),
             filter_wingman: Vec::new(),
             filter_dpsreport: Vec::new(),
             filter_donbot: Vec::new(),
@@ -195,8 +197,10 @@ pub fn render(ui: &Ui) {
         static EDIT_COPYFORMAT: Cell<bool> = const { Cell::new(false) };
         static DONBOT_TOKEN: RefCell<String> = const { RefCell::new(String::new()) };
         static DONBOT_BASE_URL: RefCell<String> = const { RefCell::new(String::new()) };
+        static DONBOT_GUILDID: RefCell<String> = const { RefCell::new(String::new()) };
         static EDIT_DONBOT_TOKEN: Cell<bool> = const { Cell::new(false) };
         static EDIT_DONBOT_BASE_URL: Cell<bool> = const { Cell::new(false) };
+        static EDIT_DONBOT_GUILDID: Cell<bool> = const { Cell::new(false) };
         static INITIALIZED: Cell<bool> = const { Cell::new(false) };
     }
 
@@ -210,6 +214,7 @@ pub fn render(ui: &Ui) {
         FILTER_DONBOT.set(settings.filter_donbot.clone());
         DONBOT_TOKEN.set(settings.donbot_token.clone());
         DONBOT_BASE_URL.set(settings.donbot_base_url.clone());
+        DONBOT_GUILDID.set(settings.donbot_guildid.clone());
         INITIALIZED.set(true);
     }
 
@@ -432,6 +437,34 @@ pub fn render(ui: &Ui) {
             });
         }
         EDIT_DONBOT_TOKEN.set(!EDIT_DONBOT_TOKEN.get())
+    }
+    // guildid text field
+    DONBOT_GUILDID.with_borrow_mut(|token| {
+        if !EDIT_DONBOT_GUILDID.get() && token.as_str() != settings.donbot_guildid.as_str() {
+            // we are not editing but guildid changed
+            // can only happen if donbot report response was successful
+            // Update local input token
+            *token = settings.donbot_guildid.clone();
+        }
+        ui.input_text(e("Donbot Guild Id"), token)
+            .read_only(!EDIT_DONBOT_GUILDID.get())
+            .password(!EDIT_DONBOT_GUILDID.get())
+            .build();
+    });
+    ui.same_line();
+    if ui.button(if !EDIT_DONBOT_GUILDID.get() {
+        e("Edit") + "##editdonbotguildid"
+    } else {
+        e("Set") + "##setdonbotguildid"
+    }) {
+        // button got clicked, check current state and toggle it
+        if EDIT_DONBOT_GUILDID.get() {
+            // Set button was clicked
+            DONBOT_GUILDID.with_borrow(|token| {
+                settings.donbot_guildid = token.clone();
+            });
+        }
+        EDIT_DONBOT_GUILDID.set(!EDIT_DONBOT_GUILDID.get())
     }
     ui.text("Don't upload logs to Donbot with the following boss ids:");
     if ui.help_marker(|| {

@@ -7,7 +7,7 @@ use std::{
 
 use crate::common::WorkerMessage;
 
-pub type DonBotJob = (usize, PathBuf, String, String); // index, file, base_url, bearer_token
+pub type DonBotJob = (usize, PathBuf, String, String, String); // index, file, base_url, bearer_token, guildid
 
 thread_local! { static CLIENT: ureq::Agent = ureq::agent(); }
 
@@ -15,8 +15,8 @@ pub fn run(inc: Receiver<DonBotJob>, out: Sender<WorkerMessage>) -> thread::Join
     thread::Builder::new()
         .name("donbot-thread".into())
         .spawn(move || {
-            for (index, location, base_url, token) in inc {
-                let result = upload(&location, &base_url, &token);
+            for (index, location, base_url, token, guildid) in inc {
+                let result = upload(&location, &base_url, &token, &guildid);
                 if let Err(e) = out.send(WorkerMessage::donbot(index, result)) {
                     log::error!("[DonBot] failed to send result: {e}");
                 }
@@ -25,7 +25,7 @@ pub fn run(inc: Receiver<DonBotJob>, out: Sender<WorkerMessage>) -> thread::Join
         .expect("could not create donbot thread")
 }
 
-fn upload(location: &PathBuf, base_url: &str, token: &str) -> anyhow::Result<(bool)> {
+fn upload(location: &PathBuf, base_url: &str, token: &str, guildid: &str) -> anyhow::Result<(bool)> {
     let bytes = std::fs::read(location)?;
     let filename = location
         .file_name()
@@ -33,9 +33,10 @@ fn upload(location: &PathBuf, base_url: &str, token: &str) -> anyhow::Result<(bo
         .unwrap_or_else(|| "upload.zevtc".into());
 
     let metadata = format!(
-        "filename {},wingman {}",
+        "filename {},wingman {},guildid {}",
         B64.encode(filename.as_bytes()),
-        B64.encode(b"false")
+        B64.encode(b"false"),
+        B64.encode(guildid)
     );
 
     // 1) Create
