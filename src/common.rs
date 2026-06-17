@@ -1,4 +1,7 @@
+use std::ffi::CString;
+
 use anyhow::Result;
+use nexus::event::Event;
 use revtc::evtc::Encounter;
 
 use crate::dpsreport::DpsReportResponse;
