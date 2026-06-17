@@ -1,7 +1,4 @@
-use std::ffi::CString;
-
 use anyhow::Result;
-use nexus::event::Event;
 use revtc::evtc::Encounter;
 
 use crate::dpsreport::DpsReportResponse;
@@ -39,11 +36,19 @@ impl WorkerMessage {
             payload: WorkerType::Wingman(wingman),
         }
     }
+
+    pub fn aleeva(index: usize, aleeva: Result<bool>) -> WorkerMessage {
+        WorkerMessage {
+            index,
+            payload: WorkerType::Aleeva(aleeva),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub enum WorkerType {
     DpsReport(Result<Result<DpsReportResponse, std::time::Instant>>),
     Wingman(Result<bool>),
+    Aleeva(Result<bool>),
     Evtc(Result<Encounter>),
 }

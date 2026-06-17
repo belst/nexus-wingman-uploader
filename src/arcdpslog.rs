@@ -12,6 +12,7 @@ use std::ffi::CString;
 use std::time::Instant;
 use std::{path::PathBuf, time::SystemTime};
 
+use crate::assets::ALEEVA;
 use crate::assets::DPSREPORT;
 use crate::assets::OPEN_IN_FOLDER;
 use crate::assets::WINGMAN;
@@ -52,6 +53,7 @@ pub struct Log {
     pub dpsreport: Step<DpsReportResponse>,
     pub dpsreport_count: u32,
     pub wingman: Step<bool>,
+    pub aleeva: Step<bool>,
 }
 
 fn format_time(time: SystemTime) -> String {
@@ -76,6 +78,7 @@ impl Log {
             dpsreport: S::Pending,
             dpsreport_count: 0,
             wingman: S::Pending,
+            aleeva: S::Pending,
         }
     }
 
@@ -236,6 +239,63 @@ impl Log {
         }
     }
 
+    fn render_aleeva(&self, ui: &Ui) {
+        thread_local! {
+            static TS: Cell<Instant> = Cell::new(Instant::now());
+        }
+        let Some(tex) = get_texture(ALEEVA) else {
+            return;
+        };
+        match &self.aleeva {
+            Step::Done(ok) => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col(if *ok {
+                        [1.0, 1.0, 1.0, 1.0]
+                    } else {
+                        let mut red = RED;
+                        red[3] = 0.3;
+                        red
+                    })
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e(if *ok {
+                        "Posted to Aleeva"
+                    } else {
+                        "Error posting to Aleeva"
+                    }));
+                }
+            }
+            Step::Skipped => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col([1.0, 1.0, 1.0, 0.3])
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e("Skipped"));
+                }
+            }
+            Step::Active | Step::Pending | Step::Retry(_) => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col([1.0, 1.0, 1.0, pulse(TS.get().elapsed().as_secs_f32())])
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e(if matches!(self.aleeva, Step::Active) {
+                        "Uploading..."
+                    } else {
+                        "Queued"
+                    }));
+                }
+            }
+            Step::Error(err) => {
+                let mut red = RED;
+                red[3] = 0.3;
+                Image::new(tex.id(), [16.0, 16.0]).tint_col(red).build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e("Error posting to Aleeva: ") + &format!("{err}"));
+                }
+            }
+        }
+    }
+
     pub fn render_row(&self, ui: &Ui) {
         // Encounter
         ui.table_next_column();
@@ -264,6 +324,9 @@ impl Log {
         // Wingman
         ui.table_next_column();
         self.render_wingman(ui);
+        // Aleeva
+        ui.table_next_column();
+        self.render_aleeva(ui);
         // Open in Folder
         ui.table_next_column();
         self.render_open_in_folder(ui);

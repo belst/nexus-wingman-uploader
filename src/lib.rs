@@ -28,6 +28,7 @@ use crate::events::{
     LogParsedEvent, WingmanEvent,
 };
 
+mod aleeva;
 mod arcdpslog;
 mod assets;
 mod common;
@@ -205,7 +206,7 @@ fn load() {
     // Todo move failure handling to from_path impl
     Settings::from_path(settings::config_path()).unwrap_or_else(|e| {
         log::error!("Failed to load settings, using default. Error: {e}");
-        Settings::get_mut().init();
+        Settings::get().init();
     });
     STATE.init_filewatcher(Settings::get().logpath().into());
     let evtc_rx = STATE.init_evtc_worker();
@@ -214,13 +215,21 @@ fn load() {
     STATE.append_thread(dpsreport::run(dpsreport_rx, producer_tx.clone()));
     let wingman_rx = STATE.init_wingman_worker();
     STATE.append_thread(wingman::run(wingman_rx, producer_tx.clone()));
+    STATE.append_thread(aleeva::run(producer_tx.clone()));
+    // Verify the stored api key on startup if Aleeva is configured.
+    {
+        let settings = Settings::get();
+        if settings.enable_aleeva && !settings.aleeva_api_key.is_empty() {
+            aleeva::send(aleeva::AleevaCommand::Verify);
+        }
+    }
 
     register_render(RenderType::Render, render!(render_fn)).revert_on_unload();
     register_render(RenderType::OptionsRender, render!(render_options)).revert_on_unload();
     register_keybind_with_struct(
         KB_IDENTIFIER,
         keybind_handler!(|_, is_release| if !is_release {
-            let mut settings = Settings::get_mut();
+            let mut settings = Settings::get();
             settings.show_window = !settings.show_window;
         }),
         Keybind {
@@ -246,6 +255,7 @@ fn unload() {
     drop(STATE.file_rx.lock().unwrap().take());
     drop(STATE.dps_worker.lock().unwrap().take());
     drop(STATE.wingman_worker.lock().unwrap().take());
+    aleeva::shutdown();
 
     log::trace!("Waiting on threads");
     for t in STATE.threads.lock().unwrap().drain(..) {
@@ -299,7 +309,7 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
             }
             WorkerType::DpsReport(r) => match r {
                 Ok(Ok(r)) => {
-                    let mut settings = Settings::get_mut();
+                    let mut settings = Settings::get();
                     // If the token changed, we need to update it
                     // Also persist to disk so user doesn't have to press save in options
                     // might freeze the game on first log upload after install
@@ -344,6 +354,9 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
                     });
                 }
                 logs[index].wingman = Step::from_value(r);
+            }
+            WorkerType::Aleeva(r) => {
+                logs[index].aleeva = Step::from_value(r);
             }
         }
     }
@@ -422,6 +435,41 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
                 l.wingman = Step::Skipped;
             }
         }
+        // Aleeva depends on the dps.report permalink, so it only runs once
+        // dps.report is done. If dps.report is skipped/failed there is no
+        // permalink to post, so Aleeva is skipped too.
+        if matches!(l.aleeva, Step::Pending) {
+            match &l.dpsreport {
+                Step::Done(dps) => {
+                    let (enabled, server, channel, notify) = {
+                        let s = Settings::get();
+                        (
+                            s.enable_aleeva,
+                            s.aleeva_selected_server_id.clone(),
+                            s.aleeva_selected_channel_id.clone(),
+                            s.aleeva_send_notification,
+                        )
+                    };
+                    if enabled && aleeva::is_authorised() && !server.is_empty() {
+                        l.aleeva = Step::Active;
+                        aleeva::send(aleeva::AleevaCommand::Post(aleeva::AleevaJob {
+                            index: i,
+                            permalink: dps.permalink.clone(),
+                            server_id: server,
+                            channel_id: channel,
+                            send_notification: notify,
+                        }));
+                    } else {
+                        l.aleeva = Step::Skipped;
+                    }
+                }
+                Step::Skipped | Step::Error(_) => {
+                    l.aleeva = Step::Skipped;
+                }
+                // dps.report still pending/active/retry: wait for it.
+                _ => {}
+            }
+        }
         if let Step::Retry(t) = l.dpsreport {
             if l.dpsreport_count > 3 {
                 l.dpsreport = Step::Error(anyhow::anyhow!("Retry limit reached"));
@@ -464,6 +512,13 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
             },
             TableColumnSetup {
                 // Wingman
+                name: e(""),
+                flags: TableColumnFlags::WIDTH_FIXED,
+                init_width_or_weight: 20.0,
+                user_id: Default::default(),
+            },
+            TableColumnSetup {
+                // Aleeva
                 name: e(""),
                 flags: TableColumnFlags::WIDTH_FIXED,
                 init_width_or_weight: 20.0,
@@ -520,7 +575,7 @@ fn render_fn(ui: &Ui) {
     update_logs(&mut logs);
     advance_logs(&mut logs);
 
-    let mut settings = Settings::get_mut();
+    let mut settings = Settings::get();
     render_hotfix20241114(ui, &mut settings);
     if settings.show_window {
         if let Some(_w) = Window::new(e("Log Uploader"))

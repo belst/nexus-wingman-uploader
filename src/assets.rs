@@ -49,6 +49,7 @@ pub const EVOKER: &str = "UPLOADER_EVOKER_16x16";
 pub const CONDUIT: &str = "UPLOADER_CONDUIT_16x16";
 pub const ANTIQUARY: &str = "UPLOADER_ANTIQUARY_16x16";
 pub const AMALGAM: &str = "UPLOADER_AMALGAM_16x16";
+pub const ALEEVA: &str = "UPLOADER_ALEEVA_16x16";
 pub fn init_textures() {
     load_texture_from_memory(DEADEYE, include_bytes!("../assets/deadeye_16x16.png"), None);
     load_texture_from_memory(HERALD, include_bytes!("../assets/herald_16x16.png"), None);
@@ -99,4 +100,5 @@ pub fn init_textures() {
     load_texture_from_memory(CONDUIT, include_bytes!("../assets/conduit_16x16.png"), None);
     load_texture_from_memory(ANTIQUARY, include_bytes!("../assets/antiquary_16x16.png"), None);
     load_texture_from_memory(AMALGAM, include_bytes!("../assets/amalgam_16x16.png"), None);
+    load_texture_from_memory(ALEEVA, include_bytes!("../assets/aleeva_16x16.png"), None);
 }

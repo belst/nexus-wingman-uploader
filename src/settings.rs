@@ -7,13 +7,16 @@ use std::{
 
 use dirs_next::document_dir;
 use nexus::{
-    imgui::{ButtonFlags, ItemFlag, StyleColor, StyleVar, Ui},
+    imgui::{StyleColor, StyleVar, Ui},
     paths::get_addon_dir,
 };
 use serde::{Deserialize, Serialize};
 
+use std::borrow::Cow;
+
 use crate::{
-    common::RED,
+    aleeva::{self, AleevaCommand},
+    common::{GREEN, RED},
     util::{UiExt, e},
 };
 
@@ -52,6 +55,16 @@ pub struct Settings {
     pub hide_hotfix_notification_20241114: bool,
     #[serde(default)]
     pub hotfix_20250512_executed: bool,
+    #[serde(default)]
+    pub enable_aleeva: bool,
+    #[serde(default)]
+    pub aleeva_api_key: String,
+    #[serde(default)]
+    pub aleeva_selected_server_id: String,
+    #[serde(default)]
+    pub aleeva_selected_channel_id: String,
+    #[serde(default)]
+    pub aleeva_send_notification: bool,
 }
 
 impl Settings {
@@ -72,6 +85,11 @@ impl Settings {
             filter_dpsreport: Vec::new(),
             hide_hotfix_notification_20241114: false,
             hotfix_20250512_executed: false,
+            enable_aleeva: false,
+            aleeva_api_key: String::new(),
+            aleeva_selected_server_id: String::new(),
+            aleeva_selected_channel_id: String::new(),
+            aleeva_send_notification: false,
         }
     }
 
@@ -81,9 +99,6 @@ impl Settings {
     }
 
     pub fn get() -> MutexGuard<'static, Self> {
-        SETTINGS.lock().unwrap()
-    }
-    pub fn get_mut() -> MutexGuard<'static, Self> {
         SETTINGS.lock().unwrap()
     }
 
@@ -202,7 +217,7 @@ pub fn render(ui: &Ui) {
         None
     };
     if ui.button(e("Save") + "##saveconfig") && valid {
-        let mut settings = SETTINGS.lock().unwrap();
+        let settings = SETTINGS.lock().unwrap();
         log::trace!("Storing config");
         if let Err(e) = settings.store(config_path()) {
             log::error!("Failed to store settings: {e}");
@@ -355,6 +370,111 @@ pub fn render(ui: &Ui) {
         }
     }
     render_wingman_filter(ui, &mut settings.filter_wingman);
+    ui.separator();
+    // aleeva
+    render_aleeva(ui, &mut settings);
+}
+
+fn render_aleeva(ui: &Ui, settings: &mut Settings) {
+    thread_local! {
+        static API_KEY: RefCell<String> = const { RefCell::new(String::new()) };
+        static EDIT_KEY: Cell<bool> = const { Cell::new(false) };
+        static INITIALIZED: Cell<bool> = const { Cell::new(false) };
+    }
+    if !INITIALIZED.get() {
+        API_KEY.set(settings.aleeva_api_key.clone());
+        INITIALIZED.set(true);
+    }
+
+    ui.checkbox(e("Enable Aleeva"), &mut settings.enable_aleeva);
+    ui.text(e(
+        "Aleeva posts the dps.report permalink, so dps.report must be enabled.",
+    ));
+
+    API_KEY.with_borrow_mut(|code| {
+        // TODO add help tooltip
+        ui.input_text(e("Aleeva API Key"), code)
+            .read_only(!EDIT_KEY.get())
+            .password(!EDIT_KEY.get())
+            .build();
+        ui.same_line();
+        // TODO: better documentation. Don't reuse plenbot docs
+        if ui.help_marker(|| ui.tooltip_text("Use /profile in discord to manage your API access. (click to open documentation for plenbot)")) {
+            if let Err(e) = open::that_detached("https://www.aleeva.io/tutorials-blog/how-to-connect-plenbot-log-uploader-to-aleeva") {
+                log::error!("Failed to open browser: {e}");
+            }
+        }
+    });
+    ui.same_line();
+    if ui.button(if !EDIT_KEY.get() {
+        e("Edit") + "##editaleevacode"
+    } else {
+        e("Set") + "##setaleevacode"
+    }) {
+        if EDIT_KEY.get() {
+            API_KEY.with_borrow(|code| {
+                settings.aleeva_api_key = code.clone();
+            });
+        }
+        EDIT_KEY.set(!EDIT_KEY.get());
+    }
+
+    let state = aleeva::snapshot();
+    if let Some(err) = &state.last_error {
+        ui.text_colored(RED, err.as_str());
+    }
+
+    if state.authorised && !state.servers.is_empty() {
+        let mut server_idx = state
+            .servers
+            .iter()
+            .position(|s| s.id == settings.aleeva_selected_server_id)
+            .unwrap_or(0);
+        if ui.combo(e("Server"), &mut server_idx, &state.servers, |s| {
+            Cow::from(s.name.as_str())
+        }) {
+            settings.aleeva_selected_server_id = state.servers[server_idx].id.clone();
+            settings.aleeva_selected_channel_id.clear();
+            aleeva::send(AleevaCommand::FetchChannels(
+                state.servers[server_idx].id.clone(),
+            ));
+        }
+
+        if let Some(server) = state.servers.get(server_idx) {
+            if server.channels.is_empty() {
+                ui.text(e("No channels loaded for this server."));
+            } else {
+                let mut chan_idx = server
+                    .channels
+                    .iter()
+                    .position(|c| c.id == settings.aleeva_selected_channel_id)
+                    .unwrap_or(0);
+                if ui.combo(e("Channel"), &mut chan_idx, &server.channels, |c| {
+                    Cow::from(c.name.as_str())
+                }) {
+                    settings.aleeva_selected_channel_id = server.channels[chan_idx].id.clone();
+                }
+            }
+        }
+
+        ui.checkbox(
+            e("Send Discord notification"),
+            &mut settings.aleeva_send_notification,
+        );
+    }
+    if ui.button(e("Verify") + "##aleevalogin") {
+        if !state.verifying {
+            aleeva::send(AleevaCommand::Verify);
+        }
+    }
+    ui.same_line();
+    if state.verifying {
+        ui.text_disabled(e("Verifying..."));
+    } else if state.authorised {
+        ui.text_colored(GREEN, e("Verified"));
+    } else {
+        ui.text_colored(RED, e("Not verified"));
+    }
 }
 
 fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {

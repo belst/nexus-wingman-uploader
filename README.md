@@ -14,7 +14,7 @@ Program to upload logs to both [dps.report](https://dps.report/) and [gw2wingman
 ## Installation:
 
 ### Automatic
-Install from `Wingman Uploader` from the Nexus Addon Library.
+Install from `Log Uploader` from the Nexus Addon Library.
 
 ### Manual
 Download `log-uploader.dll` from [Releases](https://github.com/belst/nexus-wingman-uploader/releases/)
@@ -31,3 +31,7 @@ Move the file in `<Gw2Directory>/addons`.
 - `enable_dpsreport`: Whether uploading to dpsreport should be enabled or not
 - `filter_wingman`: List of ids which should be ignored when uploading to wingman
 - `filter_dpsreport`: List of ids which should be ignored when uploading to dpsreport
+- `enable_aleeva`: Whether posting logs to [Aleeva](https://aleeva.io) should be enabled or not. Aleeva posts the dps.report permalink, so `enable_dpsreport` must also be enabled.
+- `aleeva_api_key`: Aleeva api key used to authenticate (use `/profile` to manage api access).
+- `aleeva_send_notification`: Whether Aleeva should send a Discord notification for uploaded logs
+- `aleeva_selected_server_id` / `aleeva_selected_channel_id`: The Discord server/channel Aleeva associates uploads with (set via the dropdowns in the options)
