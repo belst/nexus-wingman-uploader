@@ -321,12 +321,12 @@ impl Log {
         // DpsReport
         ui.table_next_column();
         self.render_dpsreport(ui);
-        // Wingman
-        ui.table_next_column();
-        self.render_wingman(ui);
         // Aleeva
         ui.table_next_column();
         self.render_aleeva(ui);
+        // Wingman
+        ui.table_next_column();
+        self.render_wingman(ui);
         // Open in Folder
         ui.table_next_column();
         self.render_open_in_folder(ui);

@@ -505,28 +505,28 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
             },
             TableColumnSetup {
                 // DpsReport
-                name: e(""),
-                flags: TableColumnFlags::WIDTH_FIXED,
-                init_width_or_weight: 20.0,
-                user_id: Default::default(),
-            },
-            TableColumnSetup {
-                // Wingman
-                name: e(""),
+                name: e("##dpsreportheader"),
                 flags: TableColumnFlags::WIDTH_FIXED,
                 init_width_or_weight: 20.0,
                 user_id: Default::default(),
             },
             TableColumnSetup {
                 // Aleeva
-                name: e(""),
+                name: e("##aleevaheader"),
+                flags: TableColumnFlags::WIDTH_FIXED,
+                init_width_or_weight: 20.0,
+                user_id: Default::default(),
+            },
+            TableColumnSetup {
+                // Wingman
+                name: e("##wingmanheader"),
                 flags: TableColumnFlags::WIDTH_FIXED,
                 init_width_or_weight: 20.0,
                 user_id: Default::default(),
             },
             TableColumnSetup {
                 // Open in Folder
-                name: e(""),
+                name: e("##openinfolderheader"),
                 flags: TableColumnFlags::WIDTH_FIXED,
                 init_width_or_weight: 20.0,
                 user_id: Default::default(),
