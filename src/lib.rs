@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     ffi::CString,
     path::{Path, PathBuf},
     sync::{
@@ -13,7 +14,8 @@ use arcdpslog::Step;
 use common::*;
 use filewatcher::ReceiverExt;
 use nexus::{
-    AddonFlags, UpdateProvider,
+    AddonApi, AddonFlags, UpdateProvider,
+    data_link::NexusLink,
     gui::{RenderType, register_render},
     imgui::{ChildWindow, TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window},
     keybind::{Keybind, register_keybind_with_struct},
@@ -23,9 +25,12 @@ use notify::{Event, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use settings::Settings;
 use util::e;
 
-use crate::events::{
-    DpsReportEvent, EV_DPSREPORT, EV_LOG_DETECTED, EV_LOG_PARSED, EV_WINGMAN, LogDetectedEvent,
-    LogParsedEvent, WingmanEvent,
+use crate::{
+    events::{
+        DpsReportEvent, EV_DPSREPORT, EV_LOG_DETECTED, EV_LOG_PARSED, EV_WINGMAN, LogDetectedEvent,
+        LogParsedEvent, WingmanEvent,
+    },
+    settings::FRAME_NUM,
 };
 
 mod aleeva;
@@ -570,6 +575,7 @@ You can also hide this message permanently if the configured path is correct."#,
 }
 
 fn render_fn(ui: &Ui) {
+    FRAME_NUM.set(FRAME_NUM.get() + 1);
     let mut logs = STATE.logs.lock().unwrap();
     get_new_logs(&mut logs);
     update_logs(&mut logs);
@@ -621,6 +627,8 @@ fn render_fn(ui: &Ui) {
             controls.end();
         }
     }
+
+    settings.render_reminder(ui);
 }
 
 fn render_options(ui: &Ui) {

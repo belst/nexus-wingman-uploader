@@ -7,7 +7,7 @@ use std::{
 
 use dirs_next::document_dir;
 use nexus::{
-    imgui::{StyleColor, StyleVar, Ui},
+    imgui::{StyleColor, StyleVar, Ui, Window},
     paths::get_addon_dir,
 };
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,11 @@ fn default_true() -> bool {
 
 fn default_copyformat() -> String {
     String::from("@1")
+}
+thread_local! {
+    pub static FRAME_NUM: Cell<u64> = const { Cell::new(0) };
+    pub static LAST_OPTIONS_RENDER_TICK: Cell<u64> = const { Cell::new(0) };
+    static DIRTY: Cell<bool> = const { Cell::new(false) };
 }
 
 // serde defaults only for the case, the file exists, but doesnt contain all the fields
@@ -170,7 +175,26 @@ impl Settings {
             .truncate(true)
             .open(path)?;
         serde_json::to_writer_pretty(&mut file, self)?;
+        DIRTY.set(false);
         Ok(())
+    }
+
+    pub fn render_reminder(&self, ui: &Ui) {
+        const FRAME_WAIT: u64 = 10;
+        if FRAME_NUM.get() - LAST_OPTIONS_RENDER_TICK.get() > FRAME_WAIT && DIRTY.get() {
+            Window::new(e("Log Uploader: Unsaved changes")).build(ui, || {
+                ui.text(e("You have unsaved changes. Would you like to save them?"));
+                if ui.button(e("Save")) {
+                    if let Err(e) = self.store(config_path()) {
+                        log::error!("Failed to store settings: {e}");
+                    }
+                }
+                ui.same_line();
+                if ui.button(e("Don't save")) {
+                    DIRTY.set(false);
+                }
+            });
+        }
     }
 }
 
@@ -209,6 +233,7 @@ pub fn render(ui: &Ui) {
         FILTER_DPSREPORT.set(settings.filter_dpsreport.clone());
         INITIALIZED.set(true);
     }
+    LAST_OPTIONS_RENDER_TICK.set(FRAME_NUM.get());
 
     let valid = PATH_VALID.get() && !PATH_EDIT.get() && !EDIT_TOKEN.get() && !EDIT_COPYFORMAT.get();
     let stylevar = if !valid {
@@ -259,7 +284,10 @@ pub fn render(ui: &Ui) {
                     PATH_EDIT.set(false);
 
                     let mut settings = SETTINGS.lock().unwrap();
-                    settings.logpath = lp.clone();
+                    if settings.logpath != *lp {
+                        settings.logpath = lp.clone();
+                        DIRTY.set(true);
+                    }
                 }
             });
         } else {
@@ -293,7 +321,10 @@ pub fn render(ui: &Ui) {
         if EDIT_TOKEN.get() {
             // Set button was clicked
             DPSREPORT_TOKEN.with_borrow(|token| {
-                settings.dpsreport_token = token.clone();
+                if settings.dpsreport_token != *token {
+                    settings.dpsreport_token = token.clone();
+                    DIRTY.set(true);
+                }
             });
         }
         EDIT_TOKEN.set(!EDIT_TOKEN.get())
@@ -325,15 +356,22 @@ pub fn render(ui: &Ui) {
         if EDIT_COPYFORMAT.get() {
             // Set button was clicked
             DPSREPORT_COPYFORMAT.with_borrow(|copyformat| {
-                settings.dpsreport_copyformat = copyformat.clone();
+                if settings.dpsreport_copyformat != *copyformat {
+                    settings.dpsreport_copyformat = copyformat.clone();
+                    DIRTY.set(true);
+                }
             });
         }
         EDIT_COPYFORMAT.set(!EDIT_COPYFORMAT.get())
     }
-    ui.checkbox(e("Display new logs at top"), &mut settings.rev_log_order);
+    if ui.checkbox(e("Display new logs at top"), &mut settings.rev_log_order) {
+        DIRTY.set(true);
+    }
 
     ui.separator();
-    ui.checkbox(e("Enable dps.report"), &mut settings.enable_dpsreport);
+    if ui.checkbox(e("Enable dps.report"), &mut settings.enable_dpsreport) {
+        DIRTY.set(true);
+    }
     ui.text("Don't upload logs to dps.report with the following boss ids:");
     if ui.help_marker(|| {
         ui.tooltip(|| {
@@ -352,7 +390,9 @@ pub fn render(ui: &Ui) {
     render_dpsreport_filter(ui, &mut settings.filter_dpsreport);
     ui.separator();
     // wingman
-    ui.checkbox(e("Enable Wingman"), &mut settings.enable_wingman);
+    if ui.checkbox(e("Enable Wingman"), &mut settings.enable_wingman) {
+        DIRTY.set(true);
+    }
     ui.text("Don't upload logs to Wingman with the following boss ids:");
     if ui.help_marker(|| {
         ui.tooltip(|| {
@@ -386,7 +426,9 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
         INITIALIZED.set(true);
     }
 
-    ui.checkbox(e("Enable Aleeva"), &mut settings.enable_aleeva);
+    if ui.checkbox(e("Enable Aleeva"), &mut settings.enable_aleeva) {
+        DIRTY.set(true);
+    }
     ui.text(e(
         "Aleeva posts the dps.report permalink, so dps.report must be enabled.",
     ));
@@ -413,7 +455,10 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
     }) {
         if EDIT_KEY.get() {
             API_KEY.with_borrow(|code| {
-                settings.aleeva_api_key = code.clone();
+                if settings.aleeva_api_key != *code {
+                    settings.aleeva_api_key = code.clone();
+                    DIRTY.set(true);
+                }
             });
         }
         EDIT_KEY.set(!EDIT_KEY.get());
@@ -435,6 +480,7 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
         }) {
             settings.aleeva_selected_server_id = state.servers[server_idx].id.clone();
             settings.aleeva_selected_channel_id.clear();
+            DIRTY.set(true);
             aleeva::send(AleevaCommand::FetchChannels(
                 state.servers[server_idx].id.clone(),
             ));
@@ -453,14 +499,17 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
                     Cow::from(c.name.as_str())
                 }) {
                     settings.aleeva_selected_channel_id = server.channels[chan_idx].id.clone();
+                    DIRTY.set(true);
                 }
             }
         }
 
-        ui.checkbox(
+        if ui.checkbox(
             e("Send Discord notification"),
             &mut settings.aleeva_send_notification,
-        );
+        ) {
+            DIRTY.set(true);
+        }
     }
     if ui.button(e("Verify") + "##aleevalogin") {
         if !state.verifying {
@@ -489,6 +538,9 @@ fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {
             to_remove.push(i);
         }
     }
+    if !to_remove.is_empty() {
+        DIRTY.set(true);
+    }
     for tr in to_remove {
         filter.remove(tr);
     }
@@ -503,6 +555,7 @@ fn render_dpsreport_filter(ui: &Ui, filter: &mut Vec<u16>) {
     ui.table_next_column();
     if ui.button(e("Add##dpsreportfilterid")) {
         filter.push(id as u16);
+        DIRTY.set(true);
     }
 }
 fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
@@ -516,6 +569,9 @@ fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
         if ui.button(e("remove") + &format!("##wingmanfilterremove{i}")) {
             to_remove.push(i);
         }
+    }
+    if !to_remove.is_empty() {
+        DIRTY.set(true);
     }
     for tr in to_remove {
         filter.remove(tr);
@@ -531,5 +587,6 @@ fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
     ui.table_next_column();
     if ui.button(e("Add##wingmanfilterid")) {
         filter.push(id as u16);
+        DIRTY.set(true);
     }
 }
