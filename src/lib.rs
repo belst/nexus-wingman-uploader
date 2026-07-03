@@ -1,5 +1,5 @@
 use std::{
-    cell::Cell,
+    collections::HashSet,
     ffi::CString,
     path::{Path, PathBuf},
     sync::{
@@ -14,8 +14,7 @@ use arcdpslog::Step;
 use common::*;
 use filewatcher::ReceiverExt;
 use nexus::{
-    AddonApi, AddonFlags, UpdateProvider,
-    data_link::NexusLink,
+    AddonFlags, UpdateProvider,
     gui::{RenderType, register_render},
     imgui::{ChildWindow, TableColumnFlags, TableColumnSetup, TableFlags, Ui, Window},
     keybind::{Keybind, register_keybind_with_struct},
@@ -446,24 +445,70 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
         if matches!(l.aleeva, Step::Pending) {
             match &l.dpsreport {
                 Step::Done(dps) => {
-                    let (enabled, server, channel, notify) = {
-                        let s = Settings::get();
-                        (
-                            s.enable_aleeva,
-                            s.aleeva_selected_server_id.clone(),
-                            s.aleeva_selected_channel_id.clone(),
-                            s.aleeva_send_notification,
-                        )
-                    };
-                    if enabled && aleeva::is_authorised() && !server.is_empty() {
-                        l.aleeva = Step::Active;
-                        aleeva::send(aleeva::AleevaCommand::Post(aleeva::AleevaJob {
-                            index: i,
-                            permalink: dps.permalink.clone(),
-                            server_id: server,
-                            channel_id: channel,
-                            send_notification: notify,
-                        }));
+                    let s = Settings::get();
+                    if s.enable_aleeva && aleeva::is_authorised() {
+                        // Build the set of (normalised) account names present
+                        // in this log so we can match groups efficiently.
+                        let log_players: HashSet<String> = {
+                            // EVTC is guaranteed Done here (see early-returns above).
+                            let Step::Done(enc) = &l.evtc else {
+                                unreachable!()
+                            };
+                            enc.agents
+                                .iter()
+                                .filter(|a| !a.account_name.is_empty())
+                                .map(|a| {
+                                    a.account_name.trim_start_matches(':').to_ascii_lowercase()
+                                })
+                                .collect()
+                        };
+
+                        let mut targets: Vec<aleeva::AleevaPostTarget> = Vec::new();
+                        let mut any_group_matched = false;
+
+                        // Check each configured group.
+                        for group in &s.aleeva_groups {
+                            let match_count = group
+                                .players
+                                .iter()
+                                .filter(|p| log_players.contains(p.to_ascii_lowercase().as_str()))
+                                .count();
+                            if group.min_players > 0 && match_count >= group.min_players {
+                                any_group_matched = true;
+                                if !group.target.server_id.is_empty() {
+                                    targets.push(aleeva::AleevaPostTarget {
+                                        server_id: group.target.server_id.clone(),
+                                        channel_id: group.target.channel_id.clone(),
+                                        send_notification: group.target.send_notification,
+                                    });
+                                }
+                            }
+                        }
+
+                        // Add the default target when applicable.
+                        let add_default = if s.aleeva_default_posts_unmatched_only {
+                            !any_group_matched
+                        } else {
+                            true
+                        };
+                        if add_default && !s.aleeva_selected_server_id.is_empty() {
+                            targets.push(aleeva::AleevaPostTarget {
+                                server_id: s.aleeva_selected_server_id.clone(),
+                                channel_id: s.aleeva_selected_channel_id.clone(),
+                                send_notification: s.aleeva_send_notification,
+                            });
+                        }
+
+                        if !targets.is_empty() {
+                            l.aleeva = Step::Active;
+                            aleeva::send(aleeva::AleevaCommand::Post(aleeva::AleevaJob {
+                                index: i,
+                                permalink: dps.permalink.clone(),
+                                targets,
+                            }));
+                        } else {
+                            l.aleeva = Step::Skipped;
+                        }
                     } else {
                         l.aleeva = Step::Skipped;
                     }

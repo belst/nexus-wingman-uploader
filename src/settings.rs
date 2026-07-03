@@ -7,7 +7,7 @@ use std::{
 
 use dirs_next::document_dir;
 use nexus::{
-    imgui::{StyleColor, StyleVar, Ui, Window},
+    imgui::{IdStackToken, StyleColor, StyleVar, Ui, Window},
     paths::get_addon_dir,
 };
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,34 @@ fn default_true() -> bool {
 
 fn default_copyformat() -> String {
     String::from("@1")
+}
+
+fn default_six() -> usize {
+    6
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AleevaTarget {
+    #[serde(default)]
+    pub server_id: String,
+    #[serde(default)]
+    pub channel_id: String,
+    #[serde(default)]
+    pub send_notification: bool,
+}
+
+/// A log is considered part of the group if at least
+/// `min_players` of the listed account names appear in the log.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AleevaGroup {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub players: Vec<String>,
+    #[serde(default = "default_six")]
+    pub min_players: usize,
+    #[serde(default)]
+    pub target: AleevaTarget,
 }
 thread_local! {
     pub static FRAME_NUM: Cell<u64> = const { Cell::new(0) };
@@ -64,12 +92,20 @@ pub struct Settings {
     pub enable_aleeva: bool,
     #[serde(default)]
     pub aleeva_api_key: String,
+    /// Default aleeva target, used when no group matches, or always depending on [`settings::AleevaSettings::default_posts_unmatched_only`].
     #[serde(default)]
     pub aleeva_selected_server_id: String,
     #[serde(default)]
     pub aleeva_selected_channel_id: String,
     #[serde(default)]
     pub aleeva_send_notification: bool,
+    #[serde(default)]
+    pub aleeva_groups: Vec<AleevaGroup>,
+    /// When `true`, the default target only receives logs that did not match
+    /// any group. When `false` (the default), the default target receives all
+    /// logs regardless of group matches.
+    #[serde(default)]
+    pub aleeva_default_posts_unmatched_only: bool,
 }
 
 impl Settings {
@@ -95,6 +131,8 @@ impl Settings {
             aleeva_selected_server_id: String::new(),
             aleeva_selected_channel_id: String::new(),
             aleeva_send_notification: false,
+            aleeva_groups: Vec::new(),
+            aleeva_default_posts_unmatched_only: false,
         }
     }
 
@@ -415,11 +453,71 @@ pub fn render(ui: &Ui) {
     render_aleeva(ui, &mut settings);
 }
 
+/// Render server + channel dropdowns and a "Send notification" checkbox for a
+/// single [`AleevaTarget`].
+/// `push_token` is just a convenience to prevent misuse of this function.
+/// It's to make sure that a unique id was pushed (hopefully)
+fn render_aleeva_target(
+    ui: &Ui,
+    target: &mut AleevaTarget,
+    state: &aleeva::AleevaState,
+    _push_token: &IdStackToken<'_>,
+) {
+    let servers = &state.servers;
+    if servers.is_empty() {
+        return;
+    }
+    let mut server_idx = servers
+        .iter()
+        .position(|s| s.id == target.server_id)
+        .unwrap_or(0);
+    if ui.combo(e("Server") + "##server", &mut server_idx, servers, |s| {
+        Cow::from(s.name.as_str())
+    }) {
+        target.server_id = servers[server_idx].id.clone();
+        target.channel_id.clear();
+        DIRTY.set(true);
+        aleeva::send(AleevaCommand::FetchChannels(servers[server_idx].id.clone()));
+    }
+
+    if let Some(server) = servers.get(server_idx) {
+        if server.channels.is_empty() {
+            ui.text(e("No channels loaded for this server."));
+        } else {
+            let mut chan_idx = server
+                .channels
+                .iter()
+                .position(|c| c.id == target.channel_id)
+                .unwrap_or(0);
+            if ui.combo(
+                e("Channel") + "##channel",
+                &mut chan_idx,
+                &server.channels,
+                |c| Cow::from(c.name.as_str()),
+            ) {
+                target.channel_id = server.channels[chan_idx].id.clone();
+                DIRTY.set(true);
+            }
+        }
+    }
+
+    if ui.checkbox(
+        e("Send notification") + "##sendnotification",
+        &mut target.send_notification,
+    ) {
+        DIRTY.set(true);
+    }
+}
+
 fn render_aleeva(ui: &Ui, settings: &mut Settings) {
     thread_local! {
         static API_KEY: RefCell<String> = const { RefCell::new(String::new()) };
         static EDIT_KEY: Cell<bool> = const { Cell::new(false) };
         static INITIALIZED: Cell<bool> = const { Cell::new(false) };
+        /// Per-group "add player" input buffers, indexed by group position.
+        static PLAYER_INPUTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        /// Input buffer for the "new group" name field.
+        static NEW_GROUP_NAME: RefCell<String> = const { RefCell::new(String::new()) };
     }
     if !INITIALIZED.get() {
         API_KEY.set(settings.aleeva_api_key.clone());
@@ -434,13 +532,11 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
     ));
 
     API_KEY.with_borrow_mut(|code| {
-        // TODO add help tooltip
         ui.input_text(e("Aleeva API Key"), code)
             .read_only(!EDIT_KEY.get())
             .password(!EDIT_KEY.get())
             .build();
         ui.same_line();
-        // TODO: better documentation. Don't reuse plenbot docs
         if ui.help_marker(|| ui.tooltip_text("Use /profile in discord to manage your API access. (click to open documentation for plenbot)")) {
             if let Err(e) = open::that_detached("https://www.aleeva.io/tutorials-blog/how-to-connect-plenbot-log-uploader-to-aleeva") {
                 log::error!("Failed to open browser: {e}");
@@ -469,48 +565,6 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
         ui.text_colored(RED, err.as_str());
     }
 
-    if state.authorised && !state.servers.is_empty() {
-        let mut server_idx = state
-            .servers
-            .iter()
-            .position(|s| s.id == settings.aleeva_selected_server_id)
-            .unwrap_or(0);
-        if ui.combo(e("Server"), &mut server_idx, &state.servers, |s| {
-            Cow::from(s.name.as_str())
-        }) {
-            settings.aleeva_selected_server_id = state.servers[server_idx].id.clone();
-            settings.aleeva_selected_channel_id.clear();
-            DIRTY.set(true);
-            aleeva::send(AleevaCommand::FetchChannels(
-                state.servers[server_idx].id.clone(),
-            ));
-        }
-
-        if let Some(server) = state.servers.get(server_idx) {
-            if server.channels.is_empty() {
-                ui.text(e("No channels loaded for this server."));
-            } else {
-                let mut chan_idx = server
-                    .channels
-                    .iter()
-                    .position(|c| c.id == settings.aleeva_selected_channel_id)
-                    .unwrap_or(0);
-                if ui.combo(e("Channel"), &mut chan_idx, &server.channels, |c| {
-                    Cow::from(c.name.as_str())
-                }) {
-                    settings.aleeva_selected_channel_id = server.channels[chan_idx].id.clone();
-                    DIRTY.set(true);
-                }
-            }
-        }
-
-        if ui.checkbox(
-            e("Send Discord notification"),
-            &mut settings.aleeva_send_notification,
-        ) {
-            DIRTY.set(true);
-        }
-    }
     if ui.button(e("Verify") + "##aleevalogin") {
         if !state.verifying {
             aleeva::send(AleevaCommand::Verify);
@@ -523,6 +577,170 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
         ui.text_colored(GREEN, e("Verified"));
     } else {
         ui.text_colored(RED, e("Not verified"));
+    }
+
+    if !state.authorised || state.servers.is_empty() {
+        return;
+    }
+
+    ui.separator();
+    ui.text(e("Groups"));
+    ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text("A log is posted to a group's target channel when at least");
+            ui.text("'Min players' of the group's account names appear in the log.");
+        })
+    });
+
+    // Ensure the per-group input-buffer vec stays in sync with the group list.
+    PLAYER_INPUTS.with_borrow_mut(|inputs| {
+        let n = settings.aleeva_groups.len();
+        if inputs.len() < n {
+            inputs.resize(n, String::new());
+        }
+    });
+
+    let mut groups_to_remove: Vec<usize> = Vec::new();
+
+    for (gi, group) in settings.aleeva_groups.iter_mut().enumerate() {
+        let pid = ui.push_id(gi as i32);
+
+        // Header: "GroupName  (players: N/min M)  [Remove]"
+        let header_label = format!(
+            "{} (players: {}, min: {})###grphdr",
+            group.name,
+            group.players.len(),
+            group.min_players
+        );
+        let open = ui.collapsing_header(
+            &header_label,
+            nexus::imgui::TreeNodeFlags::ALLOW_ITEM_OVERLAP,
+        );
+        ui.same_line();
+        if ui.small_button(e("Remove") + "##grpremove") {
+            groups_to_remove.push(gi);
+        }
+
+        if open {
+            // Name
+            if ui
+                .input_text(e("Name") + "##grpname", &mut group.name)
+                .build()
+            {
+                DIRTY.set(true);
+            }
+
+            // Min players
+            let mut min = group.min_players as i32;
+            if ui
+                .input_int(e("Min players") + "##grpmin", &mut min)
+                .build()
+            {
+                if group.min_players != (min.max(1)) as usize {
+                    group.min_players = (min.max(1)) as usize;
+                    DIRTY.set(true);
+                }
+            }
+
+            // Player list
+            ui.text(e("Players:"));
+            let mut players_to_remove: Vec<usize> = Vec::new();
+            for (pi, player) in group.players.iter().enumerate() {
+                let _ppid = ui.push_id(pi as i32);
+                ui.text(player.as_str());
+                ui.same_line();
+                if ui.small_button(e("x") + "##rmplayer") {
+                    players_to_remove.push(pi);
+                }
+            }
+            for pi in players_to_remove.into_iter().rev() {
+                group.players.remove(pi);
+                DIRTY.set(true);
+            }
+
+            // Add-player input
+            PLAYER_INPUTS.with_borrow_mut(|inputs| {
+                if let Some(buf) = inputs.get_mut(gi) {
+                    ui.input_text("##newplayer", buf).build();
+                    ui.same_line();
+                    if ui.button(e("Add player") + "##addplayer") && !buf.is_empty() {
+                        group.players.push(buf.clone());
+                        buf.clear();
+                        DIRTY.set(true);
+                    }
+                }
+            });
+
+            // Target
+            ui.text(e("Post target:"));
+            render_aleeva_target(ui, &mut group.target, &state, &pid);
+        }
+    }
+
+    // Remove groups in reverse order to keep indices valid.
+    for gi in groups_to_remove.into_iter().rev() {
+        settings.aleeva_groups.remove(gi);
+        PLAYER_INPUTS.with_borrow_mut(|inputs| {
+            if gi < inputs.len() {
+                inputs.remove(gi);
+            }
+        });
+        DIRTY.set(true);
+    }
+
+    // "Add group" row
+    ui.separator();
+    NEW_GROUP_NAME.with_borrow_mut(|name| {
+        ui.input_text("##newgroupname", name).build();
+        ui.same_line();
+        if ui.button(e("Add group") + "##addgroup") && !name.is_empty() {
+            settings.aleeva_groups.push(AleevaGroup {
+                name: name.clone(),
+                players: Vec::new(),
+                min_players: 1,
+                target: AleevaTarget::default(),
+            });
+            name.clear();
+            DIRTY.set(true);
+        }
+    });
+
+    // Default target
+    ui.separator();
+    ui.text(e("Default target"));
+    ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text("The default target receives logs that don't match any group");
+            ui.text("(or all logs, depending on the toggle below).");
+        })
+    });
+    if ui.checkbox(
+        e("Only post logs to default target that didn't match any group"),
+        &mut settings.aleeva_default_posts_unmatched_only,
+    ) {
+        DIRTY.set(true);
+    }
+    // Reuse the existing server/channel/notify fields as the default target.
+    let mut default_target = AleevaTarget {
+        server_id: settings.aleeva_selected_server_id.clone(),
+        channel_id: settings.aleeva_selected_channel_id.clone(),
+        send_notification: settings.aleeva_send_notification,
+    };
+    {
+        let pid = ui.push_id("default_aleeva_target");
+        render_aleeva_target(ui, &mut default_target, &state, &pid);
+    }
+    if default_target.server_id != settings.aleeva_selected_server_id {
+        settings.aleeva_selected_server_id = default_target.server_id;
+        DIRTY.set(true);
+    }
+    if default_target.channel_id != settings.aleeva_selected_channel_id {
+        settings.aleeva_selected_channel_id = default_target.channel_id;
+        DIRTY.set(true);
+    }
+    if default_target.send_notification != settings.aleeva_send_notification {
+        settings.aleeva_send_notification = default_target.send_notification;
+        DIRTY.set(true);
     }
 }
 
@@ -582,10 +800,11 @@ fn render_wingman_filter(ui: &Ui, filter: &mut Vec<u16>) {
         static ID: Cell<i32> = const { Cell::new(0) };
     }
     let mut id = ID.get();
-    ui.input_int(e("ID##wingmanfilterinput"), &mut id).build();
+    ui.input_int(e("ID") + "##wingmanfilterinput", &mut id)
+        .build();
     ID.set(id);
     ui.table_next_column();
-    if ui.button(e("Add##wingmanfilterid")) {
+    if ui.button(e("Add") + "##wingmanfilterid") {
         filter.push(id as u16);
         DIRTY.set(true);
     }

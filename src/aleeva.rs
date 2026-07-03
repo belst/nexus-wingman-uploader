@@ -55,13 +55,21 @@ impl AleevaState {
 static STATE: Mutex<AleevaState> = Mutex::new(AleevaState::new());
 static COMMAND_TX: Mutex<Option<Sender<AleevaCommand>>> = Mutex::new(None);
 
+/// A single Discord posting target bundled inside an [`AleevaJob`].
+#[derive(Debug)]
+pub struct AleevaPostTarget {
+    pub server_id: String,
+    pub channel_id: String,
+    pub send_notification: bool,
+}
+
 #[derive(Debug)]
 pub struct AleevaJob {
     pub index: usize,
     pub permalink: String,
-    pub server_id: String,
-    pub channel_id: String,
-    pub send_notification: bool,
+    /// All targets this permalink should be posted to (one per matched group
+    /// plus optionally the default target).
+    pub targets: Vec<AleevaPostTarget>,
 }
 
 #[derive(Debug)]
@@ -236,25 +244,32 @@ fn get_channels(agent: &ureq::Agent, server_id: &str) -> anyhow::Result<Vec<Disc
 }
 
 fn post_log(agent: &ureq::Agent, job: AleevaJob) -> anyhow::Result<bool> {
-    log::info!("[Aleeva] Posting {}", job.permalink);
+    log::info!(
+        "[Aleeva] Posting {} to {} target(s)",
+        job.permalink,
+        job.targets.len()
+    );
     let key = api_key();
-    let body = serde_json::json!({
-        "sendNotification": job.send_notification,
-        "notificationServerId": job.server_id,
-        "notificationChannelId": job.channel_id,
-        "dpsReportPermalink": job.permalink,
-    });
-    let resp = agent
-        .post(&format!("{API_BASE}/report"))
-        .set("Authorization", &format!("Bearer {key}"))
-        .set("Accept", "application/json")
-        .send_json(body);
-    match resp {
-        Ok(_) => Ok(true),
-        Err(ureq::Error::Status(status, res)) => {
-            let body = res.into_string().unwrap_or_default();
-            Err(anyhow::anyhow!("Aleeva post failed ({status}): {body}"))
+    for target in &job.targets {
+        let body = serde_json::json!({
+            "sendNotification": target.send_notification,
+            "notificationServerId": target.server_id,
+            "notificationChannelId": target.channel_id,
+            "dpsReportPermalink": job.permalink,
+        });
+        let resp = agent
+            .post(&format!("{API_BASE}/report"))
+            .set("Authorization", &format!("Bearer {key}"))
+            .set("Accept", "application/json")
+            .send_json(body);
+        match resp {
+            Ok(_) => {}
+            Err(ureq::Error::Status(status, res)) => {
+                let body = res.into_string().unwrap_or_default();
+                return Err(anyhow::anyhow!("Aleeva post failed ({status}): {body}"));
+            }
+            Err(e) => return Err(anyhow::anyhow!("Aleeva post failed: {e}")),
         }
-        Err(e) => Err(anyhow::anyhow!("Aleeva post failed: {e}")),
     }
+    Ok(true)
 }
