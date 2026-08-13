@@ -203,18 +203,25 @@ impl Settings {
     }
 
     pub fn store(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
-        let path = path.as_ref();
-        let prefix = path.parent().unwrap();
-        create_dir_all(prefix)?;
-        let mut file = File::options()
-            .write(true)
-            .append(false)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-        serde_json::to_writer_pretty(&mut file, self)?;
+        write_json(path, self)?;
         DIRTY.set(false);
         Ok(())
+    }
+
+    // Don't store() all the settings, just the window state.
+    // rest needs to be saved manually.
+    pub fn store_show_window(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
+        let path = path.as_ref();
+        // No need to deserialize into struct, we only care about setting show_window
+        let existing = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok());
+        // if config doesn't exist yet, store the whole thing
+        let Some(mut json) = existing.filter(serde_json::Value::is_object) else {
+            return self.store(path);
+        };
+        json["show_window"] = self.show_window.into();
+        write_json(path, &json)
     }
 
     pub fn render_reminder(&self, ui: &Ui) {
@@ -234,6 +241,20 @@ impl Settings {
             });
         }
     }
+}
+
+fn write_json<T: Serialize>(path: impl AsRef<Path>, value: &T) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    let prefix = path.parent().unwrap();
+    create_dir_all(prefix)?;
+    let mut file = File::options()
+        .write(true)
+        .append(false)
+        .create(true)
+        .truncate(true)
+        .open(path)?;
+    serde_json::to_writer_pretty(&mut file, value)?;
+    Ok(())
 }
 
 pub(crate) fn config_path() -> PathBuf {

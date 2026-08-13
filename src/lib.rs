@@ -235,6 +235,7 @@ fn load() {
         keybind_handler!(|_, is_release| if !is_release {
             let mut settings = Settings::get();
             settings.show_window = !settings.show_window;
+            persist_window_state(&settings);
         }),
         Keybind {
             key: 17,
@@ -619,6 +620,12 @@ You can also hide this message permanently if the configured path is correct."#,
     }
 }
 
+fn persist_window_state(settings: &Settings) {
+    if let Err(e) = settings.store_show_window(settings::config_path()) {
+        log::error!("Failed to store window state: {e}");
+    }
+}
+
 fn render_fn(ui: &Ui) {
     FRAME_NUM.set(FRAME_NUM.get() + 1);
     let mut logs = STATE.logs.lock().unwrap();
@@ -628,6 +635,7 @@ fn render_fn(ui: &Ui) {
 
     let mut settings = Settings::get();
     render_hotfix20241114(ui, &mut settings);
+    let was_open = settings.show_window;
     if settings.show_window {
         if let Some(_w) = Window::new(e("Log Uploader"))
             .opened(&mut settings.show_window)
@@ -671,6 +679,9 @@ fn render_fn(ui: &Ui) {
             }
             controls.end();
         }
+    }
+    if was_open != settings.show_window {
+        persist_window_state(&settings);
     }
 
     settings.render_reminder(ui);
