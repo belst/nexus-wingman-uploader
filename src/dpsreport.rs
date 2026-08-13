@@ -18,7 +18,7 @@ thread_local! {
 }
 
 fn check_json(body: &str) -> Result<Result<DpsReportResponse, Instant>, anyhow::Error> {
-    match serde_json::from_str::<Result<DpsReportResponse, DpsReportError>>(&body) {
+    match serde_json::from_str::<Result<DpsReportResponse, DpsReportError>>(body) {
         Ok(json) => {
             match json {
                 Ok(report) => Ok(Ok(report)), // somehow we got a valid report from an error response
@@ -72,7 +72,7 @@ pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHan
                         // token gets set afterwards in main thread again
                         // this should only happen on first install if no custom token is set
                         if token.is_empty() {
-                            log::info!("[DpsReport] Response: {}", format!("{res:?}"));
+                            log::info!("[DpsReport] Response: {res:?}");
                         } else {
                             log::info!(
                                 "[DpsReport] Response: {}",

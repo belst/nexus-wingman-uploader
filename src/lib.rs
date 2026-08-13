@@ -126,19 +126,17 @@ impl State {
     }
     pub fn unwatch(&self, path: impl AsRef<Path>) {
         let path = path.as_ref();
-        if let Some(watcher) = self.filewatcher.lock().unwrap().as_mut() {
-            if let Err(e) = watcher.unwatch(path) {
+        if let Some(watcher) = self.filewatcher.lock().unwrap().as_mut()
+            && let Err(e) = watcher.unwatch(path) {
                 log::error!("Failed to unwatch {}: {e}", path.display());
             }
-        }
     }
     pub fn watch(&self, path: impl AsRef<Path>) {
         let path = path.as_ref();
-        if let Some(watcher) = self.filewatcher.lock().unwrap().as_mut() {
-            if let Err(e) = watcher.watch(path, RecursiveMode::Recursive) {
+        if let Some(watcher) = self.filewatcher.lock().unwrap().as_mut()
+            && let Err(e) = watcher.watch(path, RecursiveMode::Recursive) {
                 log::error!("Failed to watch {}: {e}", path.display());
             }
-        }
     }
 }
 
@@ -189,17 +187,17 @@ fn format_url(dpsreport: &dpsreport::DpsReportResponse, format_template: &str) -
         .encounter
         .format_mode()
         .unwrap_or_else(|| "Unknown".to_string());
-    let cm = if mode == "" {
+    let cm = if mode.is_empty() {
         "".to_string()
     } else {
         format!(" ({})", mode)
     };
 
-    return format_template
+    format_template
         .replace("@1", &dpsreport.permalink)
         .replace("@2", &format!("{}{}", dpsreport.encounter.boss, cm))
         .replace("@3", &dpsreport.encounter.boss_id.to_string())
-        .replace("@4", &success);
+        .replace("@4", success)
 }
 
 fn load() {
@@ -275,7 +273,7 @@ fn unload() {
         }
     }
     // Call this to run destructors (free the vec)
-    std::mem::swap(STATE.logs.lock().unwrap().as_mut(), &mut vec![]);
+    *STATE.logs.lock().unwrap().as_mut() = vec![];
     log::trace!("Unloaded");
 }
 
@@ -593,8 +591,8 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
 
 // Notification window for misspelled logpath (hotfix 20241114)
 fn render_hotfix20241114(ui: &Ui, settings: &mut Settings) {
-    if settings.check_hotfix20241114() && !settings.hide_hotfix_notification_20241114 {
-        if let Some(_w) = Window::new(e("Arcdps Path Fix"))
+    if settings.check_hotfix20241114() && !settings.hide_hotfix_notification_20241114
+        && let Some(_w) = Window::new(e("Arcdps Path Fix"))
             .collapsible(false)
             .begin(ui)
         {
@@ -617,7 +615,6 @@ You can also hide this message permanently if the configured path is correct."#,
                 _ = settings.store(settings::config_path());
             }
         }
-    }
 }
 
 fn persist_window_state(settings: &Settings) {
@@ -636,8 +633,8 @@ fn render_fn(ui: &Ui) {
     let mut settings = Settings::get();
     render_hotfix20241114(ui, &mut settings);
     let was_open = settings.show_window;
-    if settings.show_window {
-        if let Some(_w) = Window::new(e("Log Uploader"))
+    if settings.show_window
+        && let Some(_w) = Window::new(e("Log Uploader"))
             .opened(&mut settings.show_window)
             .collapsible(false)
             .begin(ui)
@@ -679,7 +676,6 @@ fn render_fn(ui: &Ui) {
             }
             controls.end();
         }
-    }
     if was_open != settings.show_window {
         persist_window_state(&settings);
     }

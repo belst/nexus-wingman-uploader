@@ -67,11 +67,10 @@ impl UiExt for Ui<'_> {
             .add_line(min, max, [0.0, 0.0, 1.0, 1.0])
             .build();
         if self.is_item_hovered() {
-            if self.is_item_clicked() {
-                if let Err(e) = open::that_detached(url.as_ref()) {
+            if self.is_item_clicked()
+                && let Err(e) = open::that_detached(url.as_ref()) {
                     log::error!("Failed to open {}: {e}", url.as_ref());
                 }
-            }
             self.tooltip_text(e("Open ") + url.as_ref());
         }
     }

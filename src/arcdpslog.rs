@@ -107,11 +107,9 @@ impl Log {
                 if ImageButton::new(tex.id(), [16.0, 16.0])
                     .frame_padding(0)
                     .build(ui)
-                {
-                    if let Err(e) = open::that_detached(&dpsreport.permalink) {
+                    && let Err(e) = open::that_detached(&dpsreport.permalink) {
                         log::error!("Failed to open browser: {e}");
                     }
-                }
                 push_id.end();
                 if ui.is_item_hovered() {
                     ui.tooltip_text(e("Open log in Browser (Rightclick to copy)"));
@@ -167,11 +165,9 @@ impl Log {
         if ImageButton::new(tex.id(), [16.0, 16.0])
             .frame_padding(0)
             .build(ui)
-        {
-            if let Err(e) = util::open_with_selected(&self.location) {
+            && let Err(e) = util::open_with_selected(&self.location) {
                 log::error!("Failed to open folder: {e}");
             }
-        }
         push_id.end();
         if ui.is_item_hovered() {
             ui.tooltip_text(e("Show Log in Folder"));
@@ -342,8 +338,8 @@ impl Log {
                 RED
             };
             if let Some(mode) = dpsreport.encounter.format_mode() {
-                if mode == "" {
-                    ui.text_colored(color, format!("{}", dpsreport.encounter.boss));
+                if mode.is_empty() {
+                    ui.text_colored(color, &dpsreport.encounter.boss);
                 } else {
                     ui.text_colored(color, format!("{} ({})", dpsreport.encounter.boss, mode));
                 }

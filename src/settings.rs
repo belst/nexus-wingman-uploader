@@ -229,11 +229,10 @@ impl Settings {
         if FRAME_NUM.get() - LAST_OPTIONS_RENDER_TICK.get() > FRAME_WAIT && DIRTY.get() {
             Window::new(e("Log Uploader: Unsaved changes")).build(ui, || {
                 ui.text(e("You have unsaved changes. Would you like to save them?"));
-                if ui.button(e("Save")) {
-                    if let Err(e) = self.store(config_path()) {
+                if ui.button(e("Save"))
+                    && let Err(e) = self.store(config_path()) {
                         log::error!("Failed to store settings: {e}");
                     }
-                }
                 ui.same_line();
                 if ui.button(e("Don't save")) {
                     DIRTY.set(false);
@@ -441,11 +440,10 @@ pub fn render(ui: &Ui) {
             ui.text("The boss id would be 15429.");
             ui.text("Click to open log folder.");
         })
-    }) {
-        if let Err(e) = open::that_detached(&settings.logpath) {
+    })
+        && let Err(e) = open::that_detached(&settings.logpath) {
             log::error!("Failed to open log folder: {e}");
         }
-    }
     render_dpsreport_filter(ui, &mut settings.filter_dpsreport);
     ui.separator();
     // wingman
@@ -463,11 +461,10 @@ pub fn render(ui: &Ui) {
             ui.text("WvW logs are skipped by default. (ID: 1)");
             ui.text("Click to open log folder.");
         })
-    }) {
-        if let Err(e) = open::that_detached(&settings.logpath) {
+    })
+        && let Err(e) = open::that_detached(&settings.logpath) {
             log::error!("Failed to open log folder: {e}");
         }
-    }
     render_wingman_filter(ui, &mut settings.filter_wingman);
     ui.separator();
     // aleeva
@@ -558,11 +555,10 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
             .password(!EDIT_KEY.get())
             .build();
         ui.same_line();
-        if ui.help_marker(|| ui.tooltip_text("Use /profile in discord to manage your API access. (click to open documentation for plenbot)")) {
-            if let Err(e) = open::that_detached("https://www.aleeva.io/tutorials-blog/how-to-connect-plenbot-log-uploader-to-aleeva") {
+        if ui.help_marker(|| ui.tooltip_text("Use /profile in discord to manage your API access. (click to open documentation for plenbot)"))
+            && let Err(e) = open::that_detached("https://www.aleeva.io/tutorials-blog/how-to-connect-plenbot-log-uploader-to-aleeva") {
                 log::error!("Failed to open browser: {e}");
             }
-        }
     });
     ui.same_line();
     if ui.button(if !EDIT_KEY.get() {
@@ -586,11 +582,10 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
         ui.text_colored(RED, err.as_str());
     }
 
-    if ui.button(e("Verify") + "##aleevalogin") {
-        if !state.verifying {
+    if ui.button(e("Verify") + "##aleevalogin")
+        && !state.verifying {
             aleeva::send(AleevaCommand::Verify);
         }
-    }
     ui.same_line();
     if state.verifying {
         ui.text_disabled(e("Verifying..."));
@@ -656,12 +651,10 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
             if ui
                 .input_int(e("Min players") + "##grpmin", &mut min)
                 .build()
-            {
-                if group.min_players != (min.max(1)) as usize {
+                && group.min_players != (min.max(1)) as usize {
                     group.min_players = (min.max(1)) as usize;
                     DIRTY.set(true);
                 }
-            }
 
             // Player list
             ui.text(e("Players:"));

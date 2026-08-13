@@ -25,12 +25,12 @@ impl ReceiverExt for Receiver<Result<Event, Error>> {
                     EventKind::Modify(ModifyKind::Name(RenameMode::To))
                         | EventKind::Create(CreateKind::Any | CreateKind::File)
                 ) {
-                    return Ok(Box::new(
+                    Ok(Box::new(
                         event.paths.into_iter().filter(|p| p.is_file()).filter(|p| {
                             p.extension()
                                 .is_some_and(|e| "zevtc" == e.to_string_lossy().as_ref())
                         }),
-                    ));
+                    ))
                 } else {
                     Err(Error::new(ErrorKind::Generic("Not a logfile".to_string())))
                 }
