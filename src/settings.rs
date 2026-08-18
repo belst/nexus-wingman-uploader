@@ -230,9 +230,10 @@ impl Settings {
             Window::new(e("Log Uploader: Unsaved changes")).build(ui, || {
                 ui.text(e("You have unsaved changes. Would you like to save them?"));
                 if ui.button(e("Save"))
-                    && let Err(e) = self.store(config_path()) {
-                        log::error!("Failed to store settings: {e}");
-                    }
+                    && let Err(e) = self.store(config_path())
+                {
+                    log::error!("Failed to store settings: {e}");
+                }
                 ui.same_line();
                 if ui.button(e("Don't save")) {
                     DIRTY.set(false);
@@ -440,10 +441,10 @@ pub fn render(ui: &Ui) {
             ui.text("The boss id would be 15429.");
             ui.text("Click to open log folder.");
         })
-    })
-        && let Err(e) = open::that_detached(&settings.logpath) {
-            log::error!("Failed to open log folder: {e}");
-        }
+    }) && let Err(e) = open::that_detached(&settings.logpath)
+    {
+        log::error!("Failed to open log folder: {e}");
+    }
     render_dpsreport_filter(ui, &mut settings.filter_dpsreport);
     ui.separator();
     // wingman
@@ -461,10 +462,10 @@ pub fn render(ui: &Ui) {
             ui.text("WvW logs are skipped by default. (ID: 1)");
             ui.text("Click to open log folder.");
         })
-    })
-        && let Err(e) = open::that_detached(&settings.logpath) {
-            log::error!("Failed to open log folder: {e}");
-        }
+    }) && let Err(e) = open::that_detached(&settings.logpath)
+    {
+        log::error!("Failed to open log folder: {e}");
+    }
     render_wingman_filter(ui, &mut settings.filter_wingman);
     ui.separator();
     // aleeva
@@ -582,10 +583,9 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
         ui.text_colored(RED, err.as_str());
     }
 
-    if ui.button(e("Verify") + "##aleevalogin")
-        && !state.verifying {
-            aleeva::send(AleevaCommand::Verify);
-        }
+    if ui.button(e("Verify") + "##aleevalogin") && !state.verifying {
+        aleeva::send(AleevaCommand::Verify);
+    }
     ui.same_line();
     if state.verifying {
         ui.text_disabled(e("Verifying..."));
@@ -651,10 +651,11 @@ fn render_aleeva(ui: &Ui, settings: &mut Settings) {
             if ui
                 .input_int(e("Min players") + "##grpmin", &mut min)
                 .build()
-                && group.min_players != (min.max(1)) as usize {
-                    group.min_players = (min.max(1)) as usize;
-                    DIRTY.set(true);
-                }
+                && group.min_players != (min.max(1)) as usize
+            {
+                group.min_players = (min.max(1)) as usize;
+                DIRTY.set(true);
+            }
 
             // Player list
             ui.text(e("Players:"));

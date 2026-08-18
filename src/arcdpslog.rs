@@ -18,6 +18,7 @@ use crate::assets::OPEN_IN_FOLDER;
 use crate::assets::WINGMAN;
 use crate::common::GREEN;
 use crate::common::RED;
+use crate::common::WingmanProgress;
 use crate::dpsreport::DpsReportResponse;
 use crate::evtc::identifier_from_agent;
 use crate::util;
@@ -52,7 +53,11 @@ pub struct Log {
     pub evtc: Step<Encounter>,
     pub dpsreport: Step<DpsReportResponse>,
     pub dpsreport_count: u32,
-    pub wingman: Step<bool>,
+    /// `Done(Some(url))` once wingman published the log, `Done(None)` if it was
+    /// accepted but no permalink turned up.
+    pub wingman: Step<Option<String>>,
+    /// Where the log currently is in the wingman pipeline, for the tooltip.
+    pub wingman_progress: Option<WingmanProgress>,
     pub aleeva: Step<bool>,
 }
 
@@ -78,6 +83,7 @@ impl Log {
             dpsreport: S::Pending,
             dpsreport_count: 0,
             wingman: S::Pending,
+            wingman_progress: None,
             aleeva: S::Pending,
         }
     }
@@ -107,9 +113,10 @@ impl Log {
                 if ImageButton::new(tex.id(), [16.0, 16.0])
                     .frame_padding(0)
                     .build(ui)
-                    && let Err(e) = open::that_detached(&dpsreport.permalink) {
-                        log::error!("Failed to open browser: {e}");
-                    }
+                    && let Err(e) = open::that_detached(&dpsreport.permalink)
+                {
+                    log::error!("Failed to open browser: {e}");
+                }
                 push_id.end();
                 if ui.is_item_hovered() {
                     ui.tooltip_text(e("Open log in Browser (Rightclick to copy)"));
@@ -165,9 +172,10 @@ impl Log {
         if ImageButton::new(tex.id(), [16.0, 16.0])
             .frame_padding(0)
             .build(ui)
-            && let Err(e) = util::open_with_selected(&self.location) {
-                log::error!("Failed to open folder: {e}");
-            }
+            && let Err(e) = util::open_with_selected(&self.location)
+        {
+            log::error!("Failed to open folder: {e}");
+        }
         push_id.end();
         if ui.is_item_hovered() {
             ui.tooltip_text(e("Show Log in Folder"));
@@ -182,23 +190,28 @@ impl Log {
             return;
         };
         match &self.wingman {
-            Step::Done(wingman) => {
-                Image::new(tex.id(), [16.0, 16.0])
-                    .tint_col(if *wingman {
-                        // dont tint on success
-                        [1.0, 1.0, 1.0, 1.0]
-                    } else {
-                        let mut red = RED;
-                        red[3] = 0.3;
-                        red
-                    })
-                    .build(ui);
+            Step::Done(Some(url)) => {
+                let push_id =
+                    ui.push_id(format!("{}btn_wingman", self.location.display()).as_str());
+                if ImageButton::new(tex.id(), [16.0, 16.0])
+                    .frame_padding(0)
+                    .build(ui)
+                    && let Err(e) = open::that_detached(url)
+                {
+                    log::error!("Failed to open browser: {e}");
+                }
+                push_id.end();
                 if ui.is_item_hovered() {
-                    ui.tooltip_text(e(if *wingman {
-                        "Log queued for Wingman"
-                    } else {
-                        "Error queueing for Log"
-                    }));
+                    ui.tooltip_text(e("Open log in Browser (Rightclick to copy)"));
+                    if ui.is_mouse_clicked(MouseButton::Right) {
+                        ui.set_clipboard_text(url);
+                    }
+                }
+            }
+            Step::Done(None) => {
+                Image::new(tex.id(), [16.0, 16.0]).build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e("Uploaded to Wingman (no link available)"));
                 }
             }
             Step::Skipped => {
@@ -214,11 +227,10 @@ impl Log {
                     .tint_col([1.0, 1.0, 1.0, pulse(TS.get().elapsed().as_secs_f32())])
                     .build(ui);
                 if ui.is_item_hovered() {
-                    ui.tooltip_text(e(if matches!(self.wingman, Step::Active) {
-                        "Uploading..."
-                    } else {
-                        "Queued"
-                    }));
+                    ui.tooltip_text(match &self.wingman_progress {
+                        Some(p) => p.label(),
+                        None => e("Queued"),
+                    });
                 }
             }
             Step::Error(err) => {

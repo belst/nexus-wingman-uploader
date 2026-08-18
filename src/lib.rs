@@ -127,16 +127,18 @@ impl State {
     pub fn unwatch(&self, path: impl AsRef<Path>) {
         let path = path.as_ref();
         if let Some(watcher) = self.filewatcher.lock().unwrap().as_mut()
-            && let Err(e) = watcher.unwatch(path) {
-                log::error!("Failed to unwatch {}: {e}", path.display());
-            }
+            && let Err(e) = watcher.unwatch(path)
+        {
+            log::error!("Failed to unwatch {}: {e}", path.display());
+        }
     }
     pub fn watch(&self, path: impl AsRef<Path>) {
         let path = path.as_ref();
         if let Some(watcher) = self.filewatcher.lock().unwrap().as_mut()
-            && let Err(e) = watcher.watch(path, RecursiveMode::Recursive) {
-                log::error!("Failed to watch {}: {e}", path.display());
-            }
+            && let Err(e) = watcher.watch(path, RecursiveMode::Recursive)
+        {
+            log::error!("Failed to watch {}: {e}", path.display());
+        }
     }
 }
 
@@ -341,22 +343,38 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
                     logs[index].dpsreport = Step::from_value(Err(e));
                 }
             },
-            WorkerType::Wingman(r) => {
-                if let Ok(accepted) = &r {
+            WorkerType::Wingman(WingmanUpdate::Progress(p)) => {
+                logs[index].wingman_progress = Some(p);
+            }
+            WorkerType::Wingman(update) => {
+                logs[index].wingman_progress = None;
+                let (accepted, url) = match &update {
+                    WingmanUpdate::Done(url) => (true, url.as_deref().unwrap_or_default()),
+                    _ => (false, ""),
+                };
+                if !matches!(update, WingmanUpdate::Skipped) {
                     let cpath = &logs[index].location_c;
                     let boss_id = match &logs[index].evtc {
                         Step::Done(enc) => enc.header.boss_id,
                         _ => 0,
                     };
+                    let curl = CString::new(url).unwrap_or_default();
                     EV_WINGMAN.raise(&WingmanEvent {
                         version: size_of::<WingmanEvent>() as u32,
                         file_path: cpath.as_ptr(),
                         file_path_len: cpath.as_bytes().len() as u32,
                         boss_id,
-                        accepted: *accepted,
+                        accepted,
+                        url: curl.as_ptr(),
+                        url_len: curl.as_bytes().len() as u32,
                     });
                 }
-                logs[index].wingman = Step::from_value(r);
+                logs[index].wingman = match update {
+                    WingmanUpdate::Done(url) => Step::Done(url),
+                    WingmanUpdate::Skipped => Step::Skipped,
+                    WingmanUpdate::Error(e) => Step::Error(e),
+                    WingmanUpdate::Progress(_) => unreachable!(),
+                };
             }
             WorkerType::Aleeva(r) => {
                 logs[index].aleeva = Step::from_value(r);
@@ -591,30 +609,31 @@ fn setup_table<F: FnOnce()>(ui: &Ui, f: F) {
 
 // Notification window for misspelled logpath (hotfix 20241114)
 fn render_hotfix20241114(ui: &Ui, settings: &mut Settings) {
-    if settings.check_hotfix20241114() && !settings.hide_hotfix_notification_20241114
+    if settings.check_hotfix20241114()
+        && !settings.hide_hotfix_notification_20241114
         && let Some(_w) = Window::new(e("Arcdps Path Fix"))
             .collapsible(false)
             .begin(ui)
-        {
-            ui.text(format!(
-                r#"Unfortunately there was a typo in the default logpath last version.
+    {
+        ui.text(format!(
+            r#"Unfortunately there was a typo in the default logpath last version.
 You seem to have the wrong logpath ({}) configured.
 Do you want to set it to the default logpath ({})?
 You can also hide this message permanently if the configured path is correct."#,
-                settings.logpath,
-                Settings::default_dir().display()
-            ));
-            if ui.button(e("Reset logpath to default")) {
-                STATE.unwatch(&settings.logpath);
-                settings.fix_hotfix20241114();
-                STATE.watch(&settings.logpath);
-                _ = settings.store(settings::config_path());
-            }
-            if ui.button(e("Don't show this window again")) {
-                settings.hide_hotfix_notification_20241114 = true;
-                _ = settings.store(settings::config_path());
-            }
+            settings.logpath,
+            Settings::default_dir().display()
+        ));
+        if ui.button(e("Reset logpath to default")) {
+            STATE.unwatch(&settings.logpath);
+            settings.fix_hotfix20241114();
+            STATE.watch(&settings.logpath);
+            _ = settings.store(settings::config_path());
         }
+        if ui.button(e("Don't show this window again")) {
+            settings.hide_hotfix_notification_20241114 = true;
+            _ = settings.store(settings::config_path());
+        }
+    }
 }
 
 fn persist_window_state(settings: &Settings) {
@@ -638,44 +657,44 @@ fn render_fn(ui: &Ui) {
             .opened(&mut settings.show_window)
             .collapsible(false)
             .begin(ui)
-        {
-            ChildWindow::new("Log Table")
-                .size([0.0, -ui.frame_height_with_spacing() * 2.0])
-                .always_auto_resize(true)
-                .build(ui, || {
-                    if logs.is_empty() {
-                        ui.text(e("No logs yet."));
-                        return;
-                    }
-                    setup_table(ui, || {
-                        if settings.rev_log_order {
-                            for l in logs.iter().rev() {
-                                l.render_row(ui);
-                            }
-                        } else {
-                            for l in logs.iter() {
-                                l.render_row(ui);
-                            }
-                        }
-                    });
-                });
-
-            let controls = ui.begin_group();
-            ui.align_text_to_frame_padding();
-            ui.text(e("Include:"));
-            ui.same_line();
-            ui.checkbox("Success", &mut settings.copy_success);
-            ui.same_line();
-            ui.checkbox("Failure", &mut settings.copy_failure);
-
-            if ui.button(e("Copy dps.report urls")) {
-                let urls = collect_urls(&logs, &settings);
-                if !urls.is_empty() {
-                    ui.set_clipboard_text(urls);
+    {
+        ChildWindow::new("Log Table")
+            .size([0.0, -ui.frame_height_with_spacing() * 2.0])
+            .always_auto_resize(true)
+            .build(ui, || {
+                if logs.is_empty() {
+                    ui.text(e("No logs yet."));
+                    return;
                 }
+                setup_table(ui, || {
+                    if settings.rev_log_order {
+                        for l in logs.iter().rev() {
+                            l.render_row(ui);
+                        }
+                    } else {
+                        for l in logs.iter() {
+                            l.render_row(ui);
+                        }
+                    }
+                });
+            });
+
+        let controls = ui.begin_group();
+        ui.align_text_to_frame_padding();
+        ui.text(e("Include:"));
+        ui.same_line();
+        ui.checkbox("Success", &mut settings.copy_success);
+        ui.same_line();
+        ui.checkbox("Failure", &mut settings.copy_failure);
+
+        if ui.button(e("Copy dps.report urls")) {
+            let urls = collect_urls(&logs, &settings);
+            if !urls.is_empty() {
+                ui.set_clipboard_text(urls);
             }
-            controls.end();
         }
+        controls.end();
+    }
     if was_open != settings.show_window {
         persist_window_state(&settings);
     }

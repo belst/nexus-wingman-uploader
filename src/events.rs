@@ -77,6 +77,8 @@ pub struct DpsReportEvent {
 ///     uint32_t file_path_len;
 ///     uint16_t boss_id;
 ///     bool accepted;
+///     const char* url;
+///     uint32_t url_len;
 /// } WingmanEvent;
 /// ```
 #[repr(C)]
@@ -86,6 +88,10 @@ pub struct WingmanEvent {
     pub file_path_len: u32,
     pub boss_id: u16,
     pub accepted: bool,
+    /// Permalink of the published log. Empty when `accepted` is false or when
+    /// wingman did not publish a link in time.
+    pub url: *const std::ffi::c_char,
+    pub url_len: u32,
 }
 
 pub fn path_to_cstring(path: &std::path::Path) -> CString {

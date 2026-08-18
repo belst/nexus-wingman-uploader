@@ -2,6 +2,7 @@ use anyhow::Result;
 use revtc::evtc::Encounter;
 
 use crate::dpsreport::DpsReportResponse;
+use crate::util::e;
 
 pub const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 pub const GREEN: [f32; 4] = [0.0, 1.0, 0.0, 1.0];
@@ -29,8 +30,7 @@ impl WorkerMessage {
             payload: WorkerType::DpsReport(dpsreport),
         }
     }
-    // should be a url later instead of bool
-    pub fn wingman(index: usize, wingman: Result<bool>) -> WorkerMessage {
+    pub fn wingman(index: usize, wingman: WingmanUpdate) -> WorkerMessage {
         WorkerMessage {
             index,
             payload: WorkerType::Wingman(wingman),
@@ -48,7 +48,41 @@ impl WorkerMessage {
 #[derive(Debug)]
 pub enum WorkerType {
     DpsReport(Result<Result<DpsReportResponse, std::time::Instant>>),
-    Wingman(Result<bool>),
+    Wingman(WingmanUpdate),
     Aleeva(Result<bool>),
     Evtc(Result<Encounter>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WingmanProgress {
+    Uploading,
+    Queued { position: usize },
+    Processing,
+    // ERR_CAPACITY_CRITICAL Classic
+    Deferred { attempt: u32 },
+    Checking,
+}
+
+impl WingmanProgress {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Uploading => e("Uploading..."),
+            Self::Queued { position: 0 } => e("Queued"),
+            Self::Queued { position } => format!("{} ({})", e("Queued"), position),
+            Self::Processing => e("Parsing..."),
+            Self::Deferred { attempt } => {
+                format!("{} ({})", e("Wingman is busy, retrying"), attempt)
+            }
+            Self::Checking => e("Waiting for wingman..."),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum WingmanUpdate {
+    Progress(WingmanProgress),
+    // None = /checkUploadSuccessfulWithLog didn't give us a link after 5 minutes.
+    Done(Option<String>),
+    Skipped,
+    Error(anyhow::Error),
 }

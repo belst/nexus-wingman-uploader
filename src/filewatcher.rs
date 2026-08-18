@@ -4,8 +4,8 @@ use std::{
 };
 
 use notify::{
-    event::{CreateKind, ModifyKind, RenameMode},
     Error, ErrorKind, Event, EventKind,
+    event::{CreateKind, ModifyKind, RenameMode},
 };
 
 pub trait ReceiverExt {

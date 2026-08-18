@@ -95,9 +95,10 @@ pub fn is_authorised() -> bool {
 /// running.
 pub fn send(cmd: AleevaCommand) {
     if let Some(tx) = COMMAND_TX.lock().unwrap().as_ref()
-        && let Err(e) = tx.send(cmd) {
-            log::error!("[Aleeva] Failed to send command to worker: {e}");
-        }
+        && let Err(e) = tx.send(cmd)
+    {
+        log::error!("[Aleeva] Failed to send command to worker: {e}");
+    }
 }
 
 /// Drop the command sender so the worker thread terminates.
@@ -155,9 +156,10 @@ fn handle_verify(agent: &ureq::Agent) {
         {
             let mut s = Settings::get();
             if s.aleeva_selected_server_id.is_empty()
-                && let Some(first) = servers.first() {
-                    s.aleeva_selected_server_id = first.id.clone();
-                }
+                && let Some(first) = servers.first()
+            {
+                s.aleeva_selected_server_id = first.id.clone();
+            }
         }
         let selected = Settings::get().aleeva_selected_server_id.clone();
 
@@ -176,9 +178,10 @@ fn handle_verify(agent: &ureq::Agent) {
             {
                 let mut s = Settings::get();
                 if s.aleeva_selected_channel_id.is_empty()
-                    && let Some(first) = channels.first() {
-                        s.aleeva_selected_channel_id = first.id.clone();
-                    }
+                    && let Some(first) = channels.first()
+                {
+                    s.aleeva_selected_channel_id = first.id.clone();
+                }
             }
             if let Some(srv) = server_objs.iter_mut().find(|s| s.id == selected) {
                 srv.channels = channels;
