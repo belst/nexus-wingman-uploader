@@ -35,3 +35,13 @@ Move the file in `<Gw2Directory>/addons`.
 - `aleeva_api_key`: Aleeva api key used to authenticate (use `/profile` to manage api access).
 - `aleeva_send_notification`: Whether Aleeva should send a Discord notification for uploaded logs
 - `aleeva_selected_server_id` / `aleeva_selected_channel_id`: The Discord server/channel Aleeva associates uploads with (set via the dropdowns in the options)
+
+## WvW sessions
+
+Records the WvW logs of a night and combines them into one report on [wvw.bel.st](https://wvw.bel.st). Log in from the addon options, then start a session from the WvW window (quick access icon or keybind). Logs recorded while a session runs are uploaded to evtc.bel.st with detailed WvW enabled and added to the session. Stopping the session builds the report.
+
+- `enable_wvw_sessions`: Whether the WvW session window and uploads are enabled
+- `wvw_token`: Session token, written by the login in the options
+- `wvw_indicator`: Show the on screen marker while a session is recording
+- `show_wvw_window`: Whether the WvW window should be shown on startup (stores last window state)
+- `wvw_only`: Record WvW sessions and nothing else. Turns off wingman, Aleeva and dps.report and hides their options
