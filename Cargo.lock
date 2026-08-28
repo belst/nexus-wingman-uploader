@@ -170,6 +170,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
 ]
@@ -698,6 +699,7 @@ dependencies = [
  "chrono",
  "dirs-next",
  "log",
+ "mio",
  "nexus",
  "notify",
  "open",

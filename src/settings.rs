@@ -59,6 +59,17 @@ thread_local! {
     pub static FRAME_NUM: Cell<u64> = const { Cell::new(0) };
     pub static LAST_OPTIONS_RENDER_TICK: Cell<u64> = const { Cell::new(0) };
     static DIRTY: Cell<bool> = const { Cell::new(false) };
+
+    // Input buffers and edit state of the options page. Only committed to
+    // [`Settings`] when the Set button next to them is clicked.
+    static LOGPATH: RefCell<String> = const { RefCell::new(String::new()) };
+    static PATH_VALID: Cell<bool> = const { Cell::new(true) };
+    static PATH_EDIT: Cell<bool> = const { Cell::new(false) };
+    static DPSREPORT_TOKEN: RefCell<String> = const { RefCell::new(String::new()) };
+    static DPSREPORT_COPYFORMAT: RefCell<String> = const { RefCell::new(String::new()) };
+    static EDIT_TOKEN: Cell<bool> = const { Cell::new(false) };
+    static EDIT_COPYFORMAT: Cell<bool> = const { Cell::new(false) };
+    static INITIALIZED: Cell<bool> = const { Cell::new(false) };
 }
 
 // serde defaults only for the case, the file exists, but doesnt contain all the fields
@@ -106,6 +117,24 @@ pub struct Settings {
     /// logs regardless of group matches.
     #[serde(default)]
     pub aleeva_default_posts_unmatched_only: bool,
+
+    /// Group WvW logs into sessions and combine them into one report.
+    #[serde(default)]
+    pub enable_wvw_sessions: bool,
+    #[serde(default)]
+    pub show_wvw_window: bool,
+    /// On screen marker while a session is recording.
+    #[serde(default = "default_true")]
+    pub wvw_indicator: bool,
+    #[serde(default)]
+    pub wvw_token: String,
+    /// Record WvW sessions and nothing else: no Wingman, no Aleeva, no
+    /// dps.report. Hides the options for everything it turns off.
+    ///
+    /// A session gets its own parse from evtc.bel.st, so nothing in a WvW-only
+    /// setup has any use for a dps.report upload.
+    #[serde(default)]
+    pub wvw_only: bool,
 }
 
 impl Settings {
@@ -133,6 +162,11 @@ impl Settings {
             aleeva_send_notification: false,
             aleeva_groups: Vec::new(),
             aleeva_default_posts_unmatched_only: false,
+            enable_wvw_sessions: false,
+            show_wvw_window: false,
+            wvw_indicator: true,
+            wvw_token: String::new(),
+            wvw_only: false,
         }
     }
 
@@ -193,6 +227,8 @@ impl Settings {
             let contents = std::fs::read_to_string(path)?;
             let mut settings: Self = serde_json::from_str(&contents)?;
             settings.fix_hotfix20250512();
+            // WvW only implies sessions, and a config edited by hand may not.
+            settings.enable_wvw_sessions |= settings.wvw_only;
             *SETTINGS.lock().unwrap() = settings;
         } else {
             // Need to set here because it's not const
@@ -210,7 +246,7 @@ impl Settings {
 
     // Don't store() all the settings, just the window state.
     // rest needs to be saved manually.
-    pub fn store_show_window(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
+    pub fn store_window_state(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
         let path = path.as_ref();
         // No need to deserialize into struct, we only care about setting show_window
         let existing = std::fs::read_to_string(path)
@@ -221,6 +257,7 @@ impl Settings {
             return self.store(path);
         };
         json["show_window"] = self.show_window.into();
+        json["show_wvw_window"] = self.show_wvw_window.into();
         write_json(path, &json)
     }
 
@@ -270,30 +307,41 @@ fn validate_path(path: &str) -> bool {
 }
 
 pub fn render(ui: &Ui) {
-    thread_local! {
-        static LOGPATH: RefCell<String> = const { RefCell::new(String::new()) };
-        static PATH_VALID: Cell<bool> = const { Cell::new(true) };
-        static PATH_EDIT: Cell<bool> = const { Cell::new(false) };
-        static DPSREPORT_TOKEN: RefCell<String> = const { RefCell::new(String::new()) };
-        static DPSREPORT_COPYFORMAT: RefCell<String> = const { RefCell::new(String::new()) };
-        static FILTER_WINGMAN: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
-        static FILTER_DPSREPORT: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
-        static EDIT_TOKEN: Cell<bool> = const { Cell::new(false) };
-        static EDIT_COPYFORMAT: Cell<bool> = const { Cell::new(false) };
-        static INITIALIZED: Cell<bool> = const { Cell::new(false) };
-    }
-
     if !INITIALIZED.get() {
         let settings = SETTINGS.lock().unwrap();
         LOGPATH.set(settings.logpath.clone());
         DPSREPORT_TOKEN.set(settings.dpsreport_token.clone());
         DPSREPORT_COPYFORMAT.set(settings.dpsreport_copyformat.clone());
-        FILTER_WINGMAN.set(settings.filter_wingman.clone());
-        FILTER_DPSREPORT.set(settings.filter_dpsreport.clone());
         INITIALIZED.set(true);
     }
     LAST_OPTIONS_RENDER_TICK.set(FRAME_NUM.get());
 
+    render_save_button(ui);
+    render_logpath(ui);
+
+    let mut settings = SETTINGS.lock().unwrap();
+    render_dpsreport_token(ui, &mut settings);
+    render_copyformat(ui, &mut settings);
+    if ui.checkbox(e("Display new logs at top"), &mut settings.rev_log_order) {
+        DIRTY.set(true);
+    }
+
+    ui.separator();
+    render_wvw_only(ui, &mut settings);
+
+    if !settings.wvw_only {
+        ui.separator();
+        render_dpsreport(ui, &mut settings);
+        ui.separator();
+        render_wingman(ui, &mut settings);
+        ui.separator();
+        render_aleeva(ui, &mut settings);
+    }
+    ui.separator();
+    render_wvw_sessions(ui, &mut settings);
+}
+
+fn render_save_button(ui: &Ui) {
     let valid = PATH_VALID.get() && !PATH_EDIT.get() && !EDIT_TOKEN.get() && !EDIT_COPYFORMAT.get();
     let stylevar = if !valid {
         Some(ui.push_style_var(StyleVar::Alpha(0.5)))
@@ -310,13 +358,14 @@ pub fn render(ui: &Ui) {
     if let Some(stylevar) = stylevar {
         stylevar.end();
     }
+}
 
+fn render_logpath(ui: &Ui) {
     let color = if !PATH_VALID.get() {
         Some(ui.push_style_color(StyleColor::FrameBg, RED))
     } else {
         None
     };
-    // logpath
     LOGPATH.with_borrow_mut(|lp| {
         ui.input_text("Logpath", lp)
             .read_only(!PATH_EDIT.get())
@@ -331,15 +380,12 @@ pub fn render(ui: &Ui) {
     } else {
         e("Set") + "##pathset"
     }) {
-        // button got clicked, check current state and toggle it
         if PATH_EDIT.get() {
-            // Set button was clicked, so we need to validate the path
             LOGPATH.with_borrow(|lp| {
                 if !validate_path(lp.as_str()) {
                     PATH_VALID.set(false);
                 } else {
                     PATH_VALID.set(true);
-                    // we are done editing
                     PATH_EDIT.set(false);
 
                     let mut settings = SETTINGS.lock().unwrap();
@@ -356,8 +402,9 @@ pub fn render(ui: &Ui) {
             ui.attention_marker(|| ui.text_colored(RED, e("Invalid path")));
         }
     }
-    // dpsreport
-    let mut settings = SETTINGS.lock().unwrap();
+}
+
+fn render_dpsreport_token(ui: &Ui, settings: &mut Settings) {
     DPSREPORT_TOKEN.with_borrow_mut(|token| {
         if !EDIT_TOKEN.get() && token.as_str() != settings.dpsreport_token.as_str() {
             // we are not editing but token changed
@@ -376,9 +423,7 @@ pub fn render(ui: &Ui) {
     } else {
         e("Set") + "##settoken"
     }) {
-        // button got clicked, check current state and toggle it
         if EDIT_TOKEN.get() {
-            // Set button was clicked
             DPSREPORT_TOKEN.with_borrow(|token| {
                 if settings.dpsreport_token != *token {
                     settings.dpsreport_token = token.clone();
@@ -388,7 +433,9 @@ pub fn render(ui: &Ui) {
         }
         EDIT_TOKEN.set(!EDIT_TOKEN.get())
     }
+}
 
+fn render_copyformat(ui: &Ui, settings: &mut Settings) {
     DPSREPORT_COPYFORMAT.with_borrow_mut(|copyformat| {
         ui.input_text(e("dps.report copy format"), copyformat)
             .read_only(!EDIT_COPYFORMAT.get())
@@ -411,9 +458,7 @@ pub fn render(ui: &Ui) {
     } else {
         e("Set") + "##setcopyformat"
     }) {
-        // button got clicked, check current state and toggle it
         if EDIT_COPYFORMAT.get() {
-            // Set button was clicked
             DPSREPORT_COPYFORMAT.with_borrow(|copyformat| {
                 if settings.dpsreport_copyformat != *copyformat {
                     settings.dpsreport_copyformat = copyformat.clone();
@@ -423,11 +468,23 @@ pub fn render(ui: &Ui) {
         }
         EDIT_COPYFORMAT.set(!EDIT_COPYFORMAT.get())
     }
-    if ui.checkbox(e("Display new logs at top"), &mut settings.rev_log_order) {
+}
+
+fn render_wvw_only(ui: &Ui, settings: &mut Settings) {
+    if ui.checkbox(e("WvW only mode"), &mut settings.wvw_only) {
+        settings.enable_wvw_sessions |= settings.wvw_only;
         DIRTY.set(true);
     }
+    ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text("Records WvW sessions and nothing else:");
+            ui.text("no Wingman, no Aleeva, no dps.report.");
+            ui.text("Their options are hidden while this is on.");
+        })
+    });
+}
 
-    ui.separator();
+fn render_dpsreport(ui: &Ui, settings: &mut Settings) {
     if ui.checkbox(e("Enable dps.report"), &mut settings.enable_dpsreport) {
         DIRTY.set(true);
     }
@@ -446,8 +503,9 @@ pub fn render(ui: &Ui) {
         log::error!("Failed to open log folder: {e}");
     }
     render_dpsreport_filter(ui, &mut settings.filter_dpsreport);
-    ui.separator();
-    // wingman
+}
+
+fn render_wingman(ui: &Ui, settings: &mut Settings) {
     if ui.checkbox(e("Enable Wingman"), &mut settings.enable_wingman) {
         DIRTY.set(true);
     }
@@ -467,9 +525,87 @@ pub fn render(ui: &Ui) {
         log::error!("Failed to open log folder: {e}");
     }
     render_wingman_filter(ui, &mut settings.filter_wingman);
-    ui.separator();
-    // aleeva
-    render_aleeva(ui, &mut settings);
+}
+
+fn render_wvw_sessions(ui: &Ui, settings: &mut Settings) {
+    if ui.checkbox(e("Enable WvW Sessions"), &mut settings.enable_wvw_sessions) {
+        DIRTY.set(true);
+    }
+    if ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text("Groups the WvW logs of one session into a single combined report.");
+            ui.text("While a session runs, WvW logs are uploaded.");
+            ui.text("The report is built once the session completes.");
+            ui.text("Click to learn more.");
+        })
+    }) && let Err(e) = open::that_detached("https://wvw.bel.st/about")
+    {
+        log::error!("Failed to open browser: {e}");
+    }
+
+    if !settings.enable_wvw_sessions {
+        return;
+    }
+
+    if ui.checkbox(e("Show the session window"), &mut settings.show_wvw_window) {
+        DIRTY.set(true);
+    }
+    render_wvw_indicator_options(ui, settings);
+
+    let state = crate::wvwsession::snapshot();
+    match (&state.account, settings.wvw_token.is_empty()) {
+        (_, true) => ui.text_disabled(e("Not logged in.")),
+        (Some(account), false) => ui.text(format!("{} {account}", e("Logged in as"))),
+        (None, false) => ui.text_disabled(e("Logged in.")),
+    }
+
+    if settings.wvw_token.is_empty() && state.busy {
+        ui.text_disabled(e("Waiting for the browser to finish signing in..."));
+    } else if settings.wvw_token.is_empty() {
+        if state.providers.is_empty() {
+            ui.text_disabled(e("No sign in options available."));
+            if ui.button(e("Retry")) {
+                crate::wvwsession::send(crate::wvwsession::SessionCommand::FetchProviders);
+            }
+        }
+        for provider in &state.providers {
+            if ui.button(format!("{} {}", e("Log in with"), provider.label)) {
+                crate::wvwsession::send(crate::wvwsession::SessionCommand::Login {
+                    provider: provider.id.clone(),
+                });
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text(e(
+                    "Opens your browser to sign in. The addon listens on a local\n\
+                     port for the reply, so nothing has to be copied by hand.",
+                ));
+            }
+            ui.same_line();
+        }
+        ui.new_line();
+    } else if ui.button(e("Log out")) {
+        settings.wvw_token.clear();
+        DIRTY.set(true);
+        crate::wvwsession::send(crate::wvwsession::SessionCommand::LoggedOut);
+    }
+
+    if let Some(error) = &state.last_error {
+        ui.text_colored(crate::common::RED, error);
+    }
+}
+
+fn render_wvw_indicator_options(ui: &Ui, settings: &mut Settings) {
+    if ui.checkbox(
+        e("Show a window while recording"),
+        &mut settings.wvw_indicator,
+    ) {
+        DIRTY.set(true);
+    }
+    ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text("A small window with current session stats (duration, logs send) will appear while a session is recording.");
+        })
+    });
 }
 
 /// Render server + channel dropdowns and a "Send notification" checkbox for a

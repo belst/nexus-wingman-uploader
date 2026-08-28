@@ -12,12 +12,83 @@ use ureq_multipart::MultipartRequest;
 
 use crate::common::WorkerMessage;
 
-pub type DpsJob = (usize, PathBuf, String);
+pub struct DpsJob {
+    pub index: usize,
+    pub location: PathBuf,
+    pub token: String,
+}
 thread_local! {
     static CLIENT: ureq::Agent = ureq::agent()
 }
 
-fn check_json(body: &str) -> Result<Result<DpsReportResponse, Instant>, anyhow::Error> {
+type DpsResult = Result<Result<DpsReportResponse, Instant>, anyhow::Error>;
+
+const RETRY_DELAY: Duration = Duration::from_secs(30);
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(300);
+
+fn retry_in(delay: Duration) -> DpsResult {
+    Ok(Err(Instant::now() + delay))
+}
+
+fn mask(message: &str, token: &str) -> String {
+    if token.is_empty() {
+        message.to_owned()
+    } else {
+        message.replace(token, "******")
+    }
+}
+
+// Spacing dps.report asks for when it turns an upload away for rate limiting.
+fn rate_limit_delay(error: &DpsReportError) -> Option<Duration> {
+    if error.rate_limited != Some(true) {
+        return None;
+    }
+    let per_minute = error.rate_per_minute.filter(|n| *n > 0)?;
+    Some(Duration::from_secs((60 / per_minute).max(1) as u64).min(MAX_RETRY_DELAY))
+}
+
+fn retry_after(res: &Response) -> Option<Duration> {
+    let secs: u64 = res.header("retry-after")?.trim().parse().ok()?;
+    Some(Duration::from_secs(secs).min(MAX_RETRY_DELAY))
+}
+
+fn parse_report(body: &str) -> DpsResult {
+    match serde_json::from_str::<DpsReportResponse>(body) {
+        Ok(json) => Ok(Ok(json)),
+        Err(e) => Err(anyhow::anyhow!("Error parsing json: {e}: {body}")),
+    }
+}
+
+// Turn one upload attempt into a report, a retry, or a terminal error.
+fn classify(result: Result<Response, ureq::Error>, token: &str) -> DpsResult {
+    match result {
+        Ok(res) => {
+            log::info!("[DpsReport] Response: {}", mask(&format!("{res:?}"), token));
+            if (200..300).contains(&res.status()) {
+                parse_report(&res.into_string().unwrap_or_default())
+            } else {
+                Err(anyhow::anyhow!("Unknown Response Code: {}", res.status()))
+            }
+        }
+        Err(ureq::Error::Status(status, res)) => match status {
+            408 => retry_in(RETRY_DELAY),
+            429 => retry_in(retry_after(&res).unwrap_or(RETRY_DELAY)),
+            403 => check_json(&res.into_string().unwrap_or_default()),
+            status if status >= 500 => retry_in(RETRY_DELAY),
+            _ => Err(anyhow::anyhow!("Unknown error {status}")),
+        },
+        // Transport failure
+        Err(e) => {
+            log::warn!(
+                "[DpsReport] {}",
+                mask(&format!("Failed to upload file: {e}"), token)
+            );
+            retry_in(RETRY_DELAY)
+        }
+    }
+}
+
+fn check_json(body: &str) -> DpsResult {
     match serde_json::from_str::<Result<DpsReportResponse, DpsReportError>>(body) {
         Ok(json) => {
             match json {
@@ -29,8 +100,7 @@ fn check_json(body: &str) -> Result<Result<DpsReportResponse, Instant>, anyhow::
                     {
                         Err(anyhow::anyhow!("Error 403: {}", e.error))
                     } else {
-                        // Generic forbidden. we retry in 30 seconds
-                        Ok(Err(Instant::now() + Duration::from_secs(30)))
+                        retry_in(rate_limit_delay(&e).unwrap_or(RETRY_DELAY))
                     }
                 }
             }
@@ -43,54 +113,14 @@ pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHan
     thread::Builder::new()
         .name("dpsreport-thread".to_string())
         .spawn(move || {
-            for (index, location, token) in inc {
+            for job in inc {
+                let DpsJob {
+                    index,
+                    location,
+                    token,
+                } = job;
                 log::info!("dpsreport for {:?}", location);
-                let res = match upload_file(location, &token) {
-                    Err(ureq::Error::Status(status, res)) => match status {
-                        408 | 429 => Ok(Err(Instant::now() + Duration::from_secs(30))),
-                        status if status >= 500 => {
-                            Ok(Err(Instant::now() + Duration::from_secs(30)))
-                        }
-                        403 => {
-                            let body = res.into_string().unwrap_or_default();
-                            check_json(&body)
-                        }
-                        _ => Err(anyhow::anyhow!("Unknown error {}", res.status())),
-                    },
-                    Err(e) => {
-                        // token gets set afterwards in main thread again
-                        // this should only happen on first install if no custom token is set
-                        let msg = if token.is_empty() {
-                            format!("Failed to upload file: {e}")
-                        } else {
-                            format!("Failed to upload file: {e}").replace(&token, "******")
-                        };
-                        log::error!("[DpsReport] {msg}");
-                        Err(anyhow::anyhow!(msg))
-                    }
-                    Ok(res) => {
-                        // token gets set afterwards in main thread again
-                        // this should only happen on first install if no custom token is set
-                        if token.is_empty() {
-                            log::info!("[DpsReport] Response: {res:?}");
-                        } else {
-                            log::info!(
-                                "[DpsReport] Response: {}",
-                                format!("{res:?}").replace(&token, "******")
-                            );
-                        }
-
-                        if (200..300).contains(&res.status()) {
-                            let body = res.into_string().unwrap_or_default();
-                            match serde_json::from_str::<DpsReportResponse>(&body) {
-                                Ok(json) => Ok(Ok(json)),
-                                Err(e) => Err(anyhow::anyhow!("Error parsing json: {e}: {body}")),
-                            }
-                        } else {
-                            Err(anyhow::anyhow!("Unknown Response Code: {}", res.status()))
-                        }
-                    }
-                };
+                let res = classify(upload_file(&location, &token), &token);
                 if let Err(e) = out.send(WorkerMessage::dpsreport(index, res)) {
                     log::error!("[DpsReport] Failed to send dpsreport result to main thread: {e}");
                 }
@@ -99,34 +129,44 @@ pub fn run(inc: Receiver<DpsJob>, out: Sender<WorkerMessage>) -> thread::JoinHan
         .expect("Could not create dpsreport thread")
 }
 
-fn upload_file(location: PathBuf, token: &str) -> Result<Response, ureq::Error> {
+fn upload_file(location: &PathBuf, token: &str) -> Result<Response, ureq::Error> {
     log::info!("[DpsReport] Uploading {}", location.display());
 
     CLIENT.with(|c| {
         let mut req = c
             .post("https://dps.report/uploadContent")
             .query("json", "1");
+        // Nothing reads a detailed WvW parse from here -- sessions have their
+        // own from evtc.bel.st -- and asking for one is expensive enough to
+        // 500 on long logs, so it is not asked for.
+        //
+        // log here so userToken is not shown in the log
+        log::debug!("[DpsReport] Sending Request (+ usertoken, not shown) {req:?}");
         if !token.is_empty() {
             req = req.query("userToken", token);
         }
-        req.send_multipart_file("file", &location)
+        req.send_multipart_file("file", location)
     })
 }
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum PlayerResponse {
+    #[allow(dead_code)]
     Seq(Vec<Player>),
+    #[allow(dead_code)]
     Map(HashMap<String, Player>),
 }
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DpsReportResponse {
+    #[allow(dead_code)]
     pub id: String,
     pub permalink: String,
     pub user_token: String,
     pub encounter: Encounter,
+    #[allow(dead_code)]
     pub players: PlayerResponse,
 }
 
@@ -159,9 +199,13 @@ impl Encounter {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Player {
+    #[allow(dead_code)]
     pub display_name: String,
+    #[allow(dead_code)]
     pub character_name: String,
+    #[allow(dead_code)]
     pub profession: u32,
+    #[allow(dead_code)]
     pub elite_spec: u32,
 }
 

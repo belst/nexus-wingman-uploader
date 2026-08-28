@@ -12,7 +12,7 @@ use crate::common::{WingmanProgress, WingmanUpdate, WorkerMessage};
 pub type WingmanJob = (usize, PathBuf, String, u16);
 
 // const API_BASE: &str = "https://gw2wingman.nevermindcreations.de";
-const API_BASE: &str = "https://evtc.bel.st";
+use crate::common::EVTC_API_BASE as API_BASE;
 const WINGMAN_BASE: &str = "https://gw2wingman.nevermindcreations.de";
 
 const TICKET_POLL_INTERVAL: Duration = Duration::from_secs(3);
@@ -172,19 +172,8 @@ fn upload(
 ) -> anyhow::Result<Tracked> {
     log::info!("[Wingman] Uploading {}", location.display());
 
-    let filesize = std::fs::metadata(location)?.len().to_string();
-    let file_name = location
-        .file_name()
-        .ok_or_else(|| anyhow!("log path has no file name"))?
-        .to_string_lossy()
-        .into_owned();
-
-    let builder = ureq_multipart::MultipartBuilder::new()
-        .add_text("account", account)?
-        .add_text("filesize", &filesize)?
-        .add_text("triggerID", &boss_id.to_string())?
-        .add_file("file", location)?;
-    let (content_type, data) = builder.finish()?;
+    let file_name = crate::common::file_name(location)?;
+    let (content_type, data, filesize) = crate::common::evtc_multipart(location, account, boss_id)?;
 
     let now = Instant::now();
     let mut tracked = Tracked {

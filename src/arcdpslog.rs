@@ -7,7 +7,6 @@ use nexus::imgui::MouseButton;
 use nexus::imgui::Ui;
 use nexus::texture::get_texture;
 use revtc::{bossdata::BossId, evtc::Encounter};
-use std::cell::Cell;
 use std::ffi::CString;
 use std::time::Instant;
 use std::{path::PathBuf, time::SystemTime};
@@ -16,14 +15,17 @@ use crate::assets::ALEEVA;
 use crate::assets::DPSREPORT;
 use crate::assets::OPEN_IN_FOLDER;
 use crate::assets::WINGMAN;
+use crate::assets::WVWSESSION;
 use crate::common::GREEN;
 use crate::common::RED;
 use crate::common::WingmanProgress;
+use crate::common::WvwParse;
 use crate::dpsreport::DpsReportResponse;
 use crate::evtc::identifier_from_agent;
 use crate::util;
 use crate::util::UiExt;
 use crate::util::e;
+use crate::wvwsession;
 
 // Maybe this needs a retry option for retryable errors
 #[derive(Debug)]
@@ -47,18 +49,28 @@ impl<T> Step<T> {
 
 pub struct Log {
     pub location: PathBuf,
-    /// Null-terminated form of `location`, built once and reused for every
-    /// FFI event so we only allocate per log instead of per event.
+    // Null-terminated form of `location`, built once and reused for every
+    // FFI event so we only allocate per log instead of per event.
     pub location_c: CString,
     pub evtc: Step<Encounter>,
     pub dpsreport: Step<DpsReportResponse>,
     pub dpsreport_count: u32,
-    /// `Done(Some(url))` once wingman published the log, `Done(None)` if it was
-    /// accepted but no permalink turned up.
+    // `Done(Some(url))` once wingman published the log, `Done(None)` if it was
+    // accepted but no permalink turned up.
     pub wingman: Step<Option<String>>,
-    /// Where the log currently is in the wingman pipeline, for the tooltip.
+    // Where the log currently is in the wingman pipeline, for the tooltip.
     pub wingman_progress: Option<WingmanProgress>,
     pub aleeva: Step<bool>,
+    // The log id the WvW upload came back with, which the session step then
+    // registers. `Skipped` for anything that is not a WvW log arriving while a
+    // session is recording.
+    pub wvw_upload: Step<String>,
+    pub wvw_upload_count: u32,
+    // How the parse behind that id is going. `None` until the api says.
+    pub wvw_parse: Option<WvwParse>,
+    // Whether this log was handed to the WvW session service.
+    pub session: Step<bool>,
+    pub session_count: u32,
 }
 
 fn format_time(time: SystemTime) -> String {
@@ -85,6 +97,11 @@ impl Log {
             wingman: S::Pending,
             wingman_progress: None,
             aleeva: S::Pending,
+            wvw_upload: S::Pending,
+            wvw_upload_count: 0,
+            wvw_parse: None,
+            session: S::Pending,
+            session_count: 0,
         }
     }
 
@@ -98,9 +115,6 @@ impl Log {
     }
 
     fn render_dpsreport(&self, ui: &Ui) {
-        thread_local! {
-            static TS: Cell<Instant> = Cell::new(Instant::now());
-        }
         let Some(tex) = get_texture(DPSREPORT) else {
             return;
         };
@@ -136,7 +150,7 @@ impl Log {
             }
             Step::Pending | Step::Active | Step::Retry(_) => {
                 Image::new(tex.id(), [16.0, 16.0])
-                    .tint_col([1.0, 1.0, 1.0, pulse(TS.get().elapsed().as_secs_f32())])
+                    .tint_col([1.0, 1.0, 1.0, pulse(0.1 + ui.time() as f32)])
                     .build(ui);
                 if ui.is_item_hovered() {
                     if let Step::Retry(t) = self.dpsreport {
@@ -182,10 +196,88 @@ impl Log {
         }
     }
 
-    fn render_wingman(&self, ui: &Ui) {
-        thread_local! {
-            static TS: Cell<Instant> = Cell::new(Instant::now());
+    fn render_wvw_upload(&self, ui: &Ui) {
+        let Some(tex) = get_texture(WVWSESSION) else {
+            return;
+        };
+        match &self.wvw_upload {
+            Step::Done(id) => self.render_wvw_report(ui, tex.id(), id),
+            Step::Skipped => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col([1.0, 1.0, 1.0, 0.3])
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e("Skipped"));
+                }
+            }
+            Step::Active | Step::Pending | Step::Retry(_) => {
+                Image::new(tex.id(), [16.0, 16.0])
+                    .tint_col([1.0, 1.0, 1.0, pulse(0.2 + ui.time() as f32)])
+                    .build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(match self.wvw_upload {
+                        Step::Retry(_) => e("Upload failed, retrying"),
+                        _ => e("Uploading for the session..."),
+                    });
+                }
+            }
+            Step::Error(err) => {
+                let mut red = RED;
+                red[3] = 0.3;
+                Image::new(tex.id(), [16.0, 16.0]).tint_col(red).build(ui);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(e("Error uploading for the session: ") + &format!("{err}"));
+                }
+            }
         }
+    }
+
+    // The report only exists once the parse is done, so the icon is a button
+    // only from then on. The url is worth copying either way: it is where the
+    // report will be.
+    fn render_wvw_report(&self, ui: &Ui, tex: nexus::imgui::TextureId, id: &str) {
+        let url = wvwsession::report_url(id);
+        let parsed = matches!(self.wvw_parse, Some(WvwParse::Parsed));
+        let failed = matches!(self.wvw_parse, Some(WvwParse::Failed(_)));
+
+        if parsed {
+            let push_id = ui.push_id(format!("{}btn_wvwreport", self.location.display()).as_str());
+            if ImageButton::new(tex, [16.0, 16.0])
+                .frame_padding(0)
+                .build(ui)
+                && let Err(e) = open::that_detached(&url)
+            {
+                log::error!("Failed to open browser: {e}");
+            }
+            push_id.end();
+        } else {
+            let tint = if failed {
+                let mut red = RED;
+                red[3] = 0.6;
+                red
+            } else {
+                [1.0, 1.0, 1.0, pulse(0.5 + ui.time() as f32)]
+            };
+            Image::new(tex, [16.0, 16.0]).tint_col(tint).build(ui);
+        }
+
+        if ui.is_item_hovered() {
+            let status = match &self.wvw_parse {
+                Some(parse) => parse.label(),
+                None => e("Uploaded, waiting on the parser"),
+            };
+            ui.tooltip_text(if parsed {
+                status + &e(" (Click to open, rightclick to copy the link)")
+            } else {
+                status + &e(" (Rightclick to copy the link)")
+            });
+            if ui.is_mouse_clicked(MouseButton::Right) {
+                ui.set_clipboard_text(&url);
+            }
+        }
+    }
+
+    fn render_wingman(&self, ui: &Ui) {
         let Some(tex) = get_texture(WINGMAN) else {
             return;
         };
@@ -224,7 +316,7 @@ impl Log {
             }
             Step::Active | Step::Pending => {
                 Image::new(tex.id(), [16.0, 16.0])
-                    .tint_col([1.0, 1.0, 1.0, pulse(TS.get().elapsed().as_secs_f32())])
+                    .tint_col([1.0, 1.0, 1.0, pulse(0.3 + ui.time() as f32)])
                     .build(ui);
                 if ui.is_item_hovered() {
                     ui.tooltip_text(match &self.wingman_progress {
@@ -248,9 +340,6 @@ impl Log {
     }
 
     fn render_aleeva(&self, ui: &Ui) {
-        thread_local! {
-            static TS: Cell<Instant> = Cell::new(Instant::now());
-        }
         let Some(tex) = get_texture(ALEEVA) else {
             return;
         };
@@ -283,7 +372,7 @@ impl Log {
             }
             Step::Active | Step::Pending | Step::Retry(_) => {
                 Image::new(tex.id(), [16.0, 16.0])
-                    .tint_col([1.0, 1.0, 1.0, pulse(TS.get().elapsed().as_secs_f32())])
+                    .tint_col([1.0, 1.0, 1.0, pulse(0.4 + ui.time() as f32)])
                     .build(ui);
                 if ui.is_item_hovered() {
                     ui.tooltip_text(e(if matches!(self.aleeva, Step::Active) {
@@ -335,6 +424,9 @@ impl Log {
         // Wingman
         ui.table_next_column();
         self.render_wingman(ui);
+        // WvW session upload
+        ui.table_next_column();
+        self.render_wvw_upload(ui);
         // Open in Folder
         ui.table_next_column();
         self.render_open_in_folder(ui);
