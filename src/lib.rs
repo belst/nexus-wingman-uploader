@@ -958,9 +958,11 @@ fn render_wvw_window(ui: &Ui, settings: &mut Settings) {
     if !settings.enable_wvw_sessions || !settings.show_wvw_window {
         return;
     }
+    let min_width = ui.calc_text_size(e("Building the report. Usually a minute or two."))[0];
     let Some(_w) = Window::new(e("WvW Sessions"))
         .opened(&mut settings.show_wvw_window)
         .always_auto_resize(true)
+        .size_constraints([min_width, 0.0], [f32::MAX, f32::MAX])
         .begin(ui)
     else {
         return;
