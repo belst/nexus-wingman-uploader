@@ -126,6 +126,8 @@ pub struct Settings {
     /// On screen marker while a session is recording.
     #[serde(default = "default_true")]
     pub wvw_indicator: bool,
+    #[serde(default = "default_true")]
+    pub wvw_reminder: bool,
     #[serde(default)]
     pub wvw_token: String,
     /// Record WvW sessions and nothing else: no Wingman, no Aleeva, no
@@ -165,6 +167,7 @@ impl Settings {
             enable_wvw_sessions: false,
             show_wvw_window: false,
             wvw_indicator: true,
+            wvw_reminder: true,
             wvw_token: String::new(),
             wvw_only: false,
         }
@@ -604,6 +607,20 @@ fn render_wvw_indicator_options(ui: &Ui, settings: &mut Settings) {
     ui.help_marker(|| {
         ui.tooltip(|| {
             ui.text("A small window with current session stats (duration, logs send) will appear while a session is recording.");
+        })
+    });
+
+    if ui.checkbox(
+        e("Remind me to start a session"),
+        &mut settings.wvw_reminder,
+    ) {
+        DIRTY.set(true);
+    }
+    ui.help_marker(|| {
+        ui.tooltip(|| {
+            ui.text(
+                "Asks whether to start a session when WvW logs are recorded without one running.",
+            );
         })
     });
 }

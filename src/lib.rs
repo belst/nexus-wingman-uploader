@@ -50,6 +50,7 @@ mod filewatcher;
 mod settings;
 mod util;
 mod wingman;
+mod wvwreminder;
 mod wvwsession;
 mod wvwupload;
 
@@ -445,6 +446,22 @@ fn update_logs(logs: &mut [arcdpslog::Log]) {
     }
 }
 
+// Requeue once u start via reminder.
+fn requeue_missed_wvw_logs(logs: &mut [arcdpslog::Log]) {
+    for i in wvwreminder::take_requeue() {
+        let Some(l) = logs.get_mut(i) else {
+            continue;
+        };
+        if !matches!(l.wvw_upload, Step::Skipped) {
+            continue;
+        }
+        l.wvw_upload = Step::Pending;
+        l.wvw_upload_count = 0;
+        l.wvw_parse = None;
+        l.session = Step::Pending;
+    }
+}
+
 fn advance_logs(logs: &mut [arcdpslog::Log]) {
     let evtc_tx = STATE.evtc_worker.lock().unwrap();
     let Some(evtc_tx) = evtc_tx.as_ref() else {
@@ -462,6 +479,7 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
     let Some(wvw_upload_tx) = wvw_upload_tx.as_ref() else {
         return;
     };
+    requeue_missed_wvw_logs(logs);
     // This can easily be extended to support other stuff like discord webhooks
     for (i, l) in logs.iter_mut().enumerate() {
         if matches!(l.evtc, Step::Pending) {
@@ -629,6 +647,9 @@ fn advance_logs(logs: &mut [arcdpslog::Log]) {
                     l.wvw_upload = Step::Skipped;
                 }
             } else {
+                if enc.header.boss_id == WVW_BOSS_ID && wvwsession::is_configured() {
+                    wvwreminder::note_log(i);
+                }
                 l.wvw_upload = Step::Skipped;
             }
         }
@@ -843,6 +864,7 @@ fn render_fn(ui: &Ui) {
     let wvw_was_open = settings.show_wvw_window;
     render_wvw_window(ui, &mut settings);
     render_wvw_indicator(ui, &settings);
+    wvwreminder::render(ui, &mut settings);
     sync_wvw_quick_access_icon(&settings);
     if was_open != settings.show_window || wvw_was_open != settings.show_wvw_window {
         persist_window_state(&settings);
